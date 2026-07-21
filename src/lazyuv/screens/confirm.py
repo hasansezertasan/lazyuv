@@ -21,3 +21,6 @@ class ConfirmScreen(ModalScreen[bool]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "yes")
+
+    def key_escape(self) -> None:
+        self.dismiss(False)

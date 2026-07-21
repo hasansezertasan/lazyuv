@@ -18,12 +18,6 @@ class DependenciesPanel(Tree):
         self.show_root = False
         self._filter = ""
 
-    def load(self, dependencies: list[Dependency]) -> None:
-        """Reset the filter and populate the tree from scratch."""
-        self._filter = ""
-        self.clear()
-        self._populate(dependencies)
-
     def set_filter(self, text: str, dependencies: list[Dependency]) -> None:
         """Apply a name-substring filter and re-populate."""
         self._filter = text.strip().lower()

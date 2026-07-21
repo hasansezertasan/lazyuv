@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from lazyuv.data import load_project
-from lazyuv.models import Dependency, LoadStatus, Project
+from lazyuv.models import Dependency, LoadStatus, Project, Script
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
 
@@ -44,7 +44,7 @@ def test_load_groups_and_resolved_versions():
 
 def test_load_scripts():
     proj = load_project(FIXTURE).project
-    assert proj.scripts == [__import__("lazyuv.models", fromlist=["Script"]).Script("serve", "sample.cli:serve")]
+    assert proj.scripts == [Script("serve", "sample.cli:serve")]
 
 
 def test_load_not_a_project(tmp_path):

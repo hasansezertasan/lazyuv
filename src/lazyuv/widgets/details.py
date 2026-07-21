@@ -22,6 +22,3 @@ class DetailsPanel(Static):
 
     def show_script(self, script: Script) -> None:
         self.update(f"[b]{script.name}[/b]\ntarget: {script.target}")
-
-    def clear_details(self) -> None:
-        self.update("")

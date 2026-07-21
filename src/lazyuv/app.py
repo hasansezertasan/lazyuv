@@ -107,12 +107,17 @@ class LazyUvApp(App[None]):
 
     async def _run_uv_worker(self, argv: list[str]) -> None:
         output = self.query_one(OutputPanel)
-        exit_code = await commands.run_streaming(
-            argv, on_line=output.line, cwd=self.root
-        )
-        output.finish(exit_code)
-        self._busy = False
-        self.refresh_project()
+        try:
+            exit_code = await commands.run_streaming(
+                argv, on_line=output.line, cwd=self.root
+            )
+            output.finish(exit_code)
+        except Exception as exc:  # noqa: BLE001 - surface any launch/stream failure
+            output.line(f"error: {exc}")
+            output.finish(1)
+        finally:
+            self._busy = False
+            self.refresh_project()
 
     # --- actions -----------------------------------------------------------
 
@@ -131,7 +136,9 @@ class LazyUvApp(App[None]):
             self._run_uv(commands.build_run(script.name))
 
     def action_add(self) -> None:
-        groups = sorted({d.group for d in (self.project.dependencies if self.project else [])})
+        if self.project is None:
+            return
+        groups = sorted({d.group for d in self.project.dependencies})
 
         def on_close(result: tuple[list[str], str] | None) -> None:
             if result is not None:

@@ -4,7 +4,6 @@ import pytest
 
 from lazyuv.app import LazyUvApp
 from lazyuv.widgets.dependencies import DependenciesPanel
-from lazyuv.widgets.output import OutputPanel
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
 
@@ -45,6 +44,34 @@ async def test_sync_key_runs_mocked_uv(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_not_a_project_shows_hint(tmp_path):
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project is None
+
+
+@pytest.mark.asyncio
+async def test_lock_key_runs_mocked_uv(monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("l")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "lock"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_pyproject_no_project(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("this is = = not toml")
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()

@@ -40,3 +40,6 @@ class AddDependencyScreen(ModalScreen[tuple[list[str], str] | None]):
             return
         group = self.query_one("#group", Select).value
         self.dismiss((packages, str(group)))
+
+    def key_escape(self) -> None:
+        self.dismiss(None)

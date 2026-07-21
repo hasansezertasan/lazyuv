@@ -1,9 +1,15 @@
+import sys
+
+import pytest
+
 from lazyuv.commands import (
     build_add,
     build_lock,
     build_remove,
     build_run,
     build_sync,
+    run_streaming,
+    uv_available,
 )
 
 
@@ -49,3 +55,30 @@ def test_build_sync_lock_run():
     assert build_sync() == ["uv", "sync"]
     assert build_lock() == ["uv", "lock"]
     assert build_run("serve") == ["uv", "run", "serve"]
+
+
+@pytest.mark.asyncio
+async def test_run_streaming_captures_lines_and_exit_code():
+    lines: list[str] = []
+    # Use the current Python to emulate a command that prints two lines.
+    argv = [sys.executable, "-c", "print('one'); print('two')"]
+    exit_code = await run_streaming(argv, on_line=lines.append)
+    assert exit_code == 0
+    assert lines == ["one", "two"]
+
+
+@pytest.mark.asyncio
+async def test_run_streaming_nonzero_exit():
+    argv = [sys.executable, "-c", "import sys; sys.exit(3)"]
+    exit_code = await run_streaming(argv, on_line=lambda _l: None)
+    assert exit_code == 3
+
+
+def test_uv_available_true(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv")
+    assert uv_available() is True
+
+
+def test_uv_available_false(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert uv_available() is False

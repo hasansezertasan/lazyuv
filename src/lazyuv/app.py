@@ -15,6 +15,7 @@ from lazyuv.data import load_project
 from lazyuv.models import Dependency, LoadStatus, Project, Script
 from lazyuv.screens.add_dependency import AddDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
+from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
 from lazyuv.widgets.dependencies import DependenciesPanel
 from lazyuv.widgets.details import DetailsPanel
@@ -44,6 +45,7 @@ class LazyUvApp(App[None]):
         self.root = root or Path.cwd()
         self.project: Project | None = None
         self._busy = False
+        self._filter_text = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -75,7 +77,9 @@ class LazyUvApp(App[None]):
 
         self.project = result.project
         self.sub_title = f"{self.project.name} {self.project.version}"
-        self.query_one(DependenciesPanel).load(self.project.dependencies)
+        self.query_one(DependenciesPanel).set_filter(
+            self._filter_text, self.project.dependencies
+        )
         self.query_one(ScriptsPanel).load(self.project.scripts)
 
     # --- selection wiring --------------------------------------------------
@@ -148,8 +152,16 @@ class LazyUvApp(App[None]):
         self.push_screen(ConfirmScreen(f"Remove {dep.name}?"), on_close)
 
     def action_filter(self) -> None:
-        # Wired fully in a later task.
-        pass
+        if self.project is None:
+            return
+
+        def on_close(text: str | None) -> None:
+            if text is None:
+                return
+            self._filter_text = text
+            self.query_one(DependenciesPanel).set_filter(text, self.project.dependencies)
+
+        self.push_screen(FilterScreen(self._filter_text), on_close)
 
 
 def main() -> None:

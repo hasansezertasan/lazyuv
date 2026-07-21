@@ -32,3 +32,11 @@ DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel {
     height: auto;
     align: center middle;
 }
+
+#filter-dialog {
+    background: $panel;
+    border: thick $primary;
+    padding: 1 2;
+    width: 60;
+    height: auto;
+}

@@ -55,8 +55,9 @@ class DependenciesPanel(Tree):
             deps = groups[group]
             branch: TreeNode = self.root.add(f"{group} ({len(deps)})", expand=True)
             for dep in sorted(deps, key=lambda d: d.name):
-                if dep.fork_versions:
-                    version = f"{' / '.join(dep.fork_versions)}  ({len(dep.fork_versions)} forks)"
+                if dep.locked_versions:
+                    joined = " / ".join(dep.locked_versions)
+                    version = f"{joined}  ({len(dep.locked_versions)} versions)"
                 else:
                     version = dep.resolved_version or "—"
                 branch.add_leaf(f"{dep.name}  {version}", data=dep)

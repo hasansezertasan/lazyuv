@@ -137,11 +137,11 @@ def test_forked_package_lists_all_versions(tmp_path):
     by_name = {d.name: d for d in proj.dependencies}
 
     # forked: all distinct versions, in lock order; primary is the first
-    assert by_name["httpx"].fork_versions == ("0.27.0", "0.28.1")
+    assert by_name["httpx"].locked_versions == ("0.27.0", "0.28.1")
     assert by_name["httpx"].resolved_version == "0.27.0"
 
-    # non-forked: unchanged, no fork_versions
-    assert by_name["rich"].fork_versions == ()
+    # non-forked: unchanged, no locked_versions
+    assert by_name["rich"].locked_versions == ()
     assert by_name["rich"].resolved_version == "13.7.1"
 
 
@@ -168,7 +168,7 @@ def test_duplicate_version_across_entries_is_not_a_fork(tmp_path):
     )
     proj = load_project(tmp_path).project
     httpx = next(d for d in proj.dependencies if d.name == "httpx")
-    assert httpx.fork_versions == ()
+    assert httpx.locked_versions == ()
     assert httpx.resolved_version == "0.28.1"
 
 

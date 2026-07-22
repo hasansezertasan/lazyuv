@@ -20,9 +20,12 @@ class Dependency:
     resolved_version: str | None = None  # from uv.lock, None if not locked
     source: str = "registry"  # registry | git | path | url | other
     kind: str = "extra"       # main | dev | extra | group  (how uv targets this dep)
-    # All distinct resolved versions when the package is forked in a universal
-    # lock (length >= 2), in lock-file order; empty when there are 0 or 1 entries.
-    fork_versions: tuple[str, ...] = ()
+    # All distinct versions when the lock holds several entries for this package
+    # (universal-lock resolution forks OR [tool.uv].conflicts variants), in
+    # lock-file order; empty when there are 0 or 1 entries. lazyuv does not
+    # evaluate markers/conflicts, so it neither labels nor scopes these — it just
+    # surfaces every locked version.
+    locked_versions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

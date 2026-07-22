@@ -12,18 +12,18 @@ class DetailsPanel(Static):
 
     def show_dependency(self, dep: Dependency) -> None:
         spec = dep.spec or "(any)"
-        if dep.fork_versions:
-            version = " / ".join(dep.fork_versions)
-            fork_line = f"\nforks:  {len(dep.fork_versions)} (marker-specific)"
+        if dep.locked_versions:
+            version = " / ".join(dep.locked_versions)
+            extra_line = f"\nlocked: {len(dep.locked_versions)} versions in lock"
         else:
             version = dep.resolved_version or "(unlocked)"
-            fork_line = ""
+            extra_line = ""
         self.update(
             f"[b]{dep.name}[/b]  {version}\n"
             f"spec:   {spec}\n"
             f"group:  {dep.group}\n"
             f"source: {dep.source}"
-            f"{fork_line}"
+            f"{extra_line}"
         )
 
     def show_script(self, script: Script) -> None:

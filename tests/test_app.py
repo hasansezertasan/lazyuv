@@ -195,7 +195,7 @@ async def test_forked_dependency_shows_all_versions(tmp_path):
             for group_node in tree.root.children
             for node in group_node.children
         ]
-        assert any("0.27.0 / 0.28.1" in lb and "2 forks" in lb for lb in labels)
+        assert any("0.27.0 / 0.28.1" in lb and "2 versions" in lb for lb in labels)
 
 
 def test_add_dialog_keeps_reserved_name_extras():

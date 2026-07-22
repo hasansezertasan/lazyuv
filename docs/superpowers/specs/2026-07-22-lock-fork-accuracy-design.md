@@ -39,7 +39,8 @@ naive-sort bugs.
 ### Model (`models.py`)
 Add to `Dependency`:
 - `locked_versions: tuple[str, ...] = ()` — all distinct versions when the lock has
-  several entries for the package (length ≥ 2); empty when there are 0 or 1 entries.
+  more than one for the package (length ≥ 2); empty when there are 0 or 1 distinct
+  versions (repeated entries of the same version do not count).
 - `resolved_version` keeps its meaning: the sole version when there's one entry,
   `None` when unlocked. When there are several, it holds the first (a stable
   primary); `locked_versions` is the authoritative multi-value view.

@@ -108,6 +108,70 @@ def test_load_collects_groups_including_empty(tmp_path):
     assert ("docs", "group") in proj.groups
 
 
+def test_forked_package_lists_all_versions(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["httpx", "rich"]\n'
+    )
+    # httpx is forked (two entries, different versions); rich is single.
+    (tmp_path / "uv.lock").write_text(
+        "version = 1\n"
+        'requires-python = ">=3.14"\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.27.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.28.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        "[[package]]\n"
+        'name = "rich"\n'
+        'version = "13.7.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+    )
+    proj = load_project(tmp_path).project
+    by_name = {d.name: d for d in proj.dependencies}
+
+    # forked: all distinct versions, in lock order; primary is the first
+    assert by_name["httpx"].locked_versions == ("0.27.0", "0.28.1")
+    assert by_name["httpx"].resolved_version == "0.27.0"
+
+    # non-forked: unchanged, no locked_versions
+    assert by_name["rich"].locked_versions == ()
+    assert by_name["rich"].resolved_version == "13.7.1"
+
+
+def test_duplicate_version_across_entries_is_not_a_fork(tmp_path):
+    # Two entries, same version -> one distinct version -> not treated as forked.
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["httpx"]\n'
+    )
+    (tmp_path / "uv.lock").write_text(
+        "version = 1\n"
+        'requires-python = ">=3.14"\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.28.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.28.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+    )
+    proj = load_project(tmp_path).project
+    httpx = next(d for d in proj.dependencies if d.name == "httpx")
+    assert httpx.locked_versions == ()
+    assert httpx.resolved_version == "0.28.1"
+
+
 def test_read_lock_skips_nameless_package(tmp_path):
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"

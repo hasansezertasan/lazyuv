@@ -161,10 +161,14 @@ Lower-priority or design-uncertain items; promoted into a milestone when justifi
   applying.
 - **Run scripts with arguments** — v1 runs `uv run <script>` with no extra args;
   add an args prompt (`uv run <script> -- <args>`).
-- **Universal-lock fork accuracy** — v1's version display keys `uv.lock` packages by
-  normalized name, so for universal locks with multiple marker-specific forks of the
-  same package the *last* entry wins. Match a declaration to its correct fork by
-  evaluating markers/version/source before showing a resolved version.
+- **Multiple locked versions** — *addressed:* a package with several `uv.lock`
+  entries (universal-lock resolution forks or `[tool.uv].conflicts` variants) now
+  displays all its distinct versions (`httpx  0.27.0 / 0.28.1  (2 versions)`) in
+  lock-file order instead of an arbitrary last-write-wins pick. Evaluating
+  `resolution-markers` to show only the environment-applicable version, or resolving
+  `[tool.uv].conflicts` to scope a version to its extra/group, remains a non-goal
+  (would require marker/conflict evaluation / the `packaging` dependency); until
+  then a conflict-variant declaration may list versions from other extras.
 - **Preserve selection UX** — v1 restores the highlighted dependency across
   refreshes; extend the same to the scripts panel and scroll position.
 

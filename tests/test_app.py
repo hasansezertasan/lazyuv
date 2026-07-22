@@ -165,6 +165,39 @@ async def test_selection_preserved_across_refresh():
         assert selected is not None and selected.name == "pytest"
 
 
+@pytest.mark.asyncio
+async def test_forked_dependency_shows_all_versions(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["httpx"]\n'
+    )
+    (tmp_path / "uv.lock").write_text(
+        "version = 1\n"
+        'requires-python = ">=3.14"\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.27.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.28.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+    )
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tree = app.query_one(DependenciesPanel)
+        labels = [
+            str(node.label)
+            for group_node in tree.root.children
+            for node in group_node.children
+        ]
+        assert any("0.27.0 / 0.28.1" in lb and "2 versions" in lb for lb in labels)
+
+
 def test_add_dialog_keeps_reserved_name_extras():
     from lazyuv.screens.add_dependency import AddDependencyScreen
 

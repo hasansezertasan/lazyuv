@@ -138,12 +138,17 @@ class LazyUvApp(App[None]):
     def action_add(self) -> None:
         if self.project is None:
             return
-        groups = sorted({d.group for d in self.project.dependencies})
+        kinds = {d.group: d.kind for d in self.project.dependencies}
+        groups = sorted(kinds)
 
         def on_close(result: tuple[list[str], str] | None) -> None:
             if result is not None:
                 packages, group = result
-                self._run_uv(commands.build_add(packages, group))
+                if group in ("main", "dev"):
+                    kind = group
+                else:
+                    kind = kinds.get(group, "group")
+                self._run_uv(commands.build_add(packages, group, kind))
 
         self.push_screen(AddDependencyScreen(groups), on_close)
 
@@ -154,7 +159,7 @@ class LazyUvApp(App[None]):
 
         def on_close(confirmed: bool) -> None:
             if confirmed:
-                self._run_uv(commands.build_remove(dep.name, dep.group))
+                self._run_uv(commands.build_remove(dep.name, dep.group, dep.kind))
 
         self.push_screen(ConfirmScreen(f"Remove {dep.name}?"), on_close)
 

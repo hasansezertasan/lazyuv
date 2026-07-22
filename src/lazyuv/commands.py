@@ -12,20 +12,22 @@ from collections.abc import Callable
 from pathlib import Path
 
 
-def _group_flags(group: str) -> list[str]:
+def _group_flags(group: str, kind: str = "extra") -> list[str]:
     if group == "main":
         return []
     if group == "dev":
         return ["--dev"]
+    if kind == "group":
+        return ["--group", group]
     return ["--optional", group]
 
 
-def build_add(packages: list[str], group: str = "main") -> list[str]:
-    return ["uv", "add", *_group_flags(group), *packages]
+def build_add(packages: list[str], group: str = "main", kind: str = "extra") -> list[str]:
+    return ["uv", "add", *_group_flags(group, kind), *packages]
 
 
-def build_remove(package: str, group: str = "main") -> list[str]:
-    return ["uv", "remove", *_group_flags(group), package]
+def build_remove(package: str, group: str = "main", kind: str = "extra") -> list[str]:
+    return ["uv", "remove", *_group_flags(group, kind), package]
 
 
 def build_sync() -> list[str]:
@@ -53,6 +55,8 @@ async def run_streaming(
     """Run `argv`, invoking `on_line` for each combined stdout/stderr line.
 
     Returns the process exit code. Lines are yielded without trailing newlines.
+    On cancellation (or any error mid-run) the child process is terminated and
+    awaited so it is never orphaned.
     """
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -61,6 +65,14 @@ async def run_streaming(
         stderr=asyncio.subprocess.STDOUT,
     )
     assert process.stdout is not None
-    async for raw in process.stdout:
-        on_line(raw.decode(errors="replace").rstrip("\n"))
-    return await process.wait()
+    try:
+        async for raw in process.stdout:
+            on_line(raw.decode(errors="replace").rstrip("\n"))
+        return await process.wait()
+    finally:
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            await process.wait()

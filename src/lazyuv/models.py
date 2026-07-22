@@ -19,6 +19,7 @@ class Dependency:
     group: str                # "main", "dev", or an optional-group name
     resolved_version: str | None = None  # from uv.lock, None if not locked
     source: str = "registry"  # registry | git | path | url
+    kind: str = "extra"       # main | dev | extra | group  (how uv targets this dep)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,3 +1,4 @@
+import asyncio
 import sys
 
 import pytest
@@ -51,6 +52,24 @@ def test_build_remove_optional():
     ]
 
 
+def test_build_add_dependency_group():
+    assert build_add(["mkdocs"], group="docs", kind="group") == [
+        "uv", "add", "--group", "docs", "mkdocs",
+    ]
+
+
+def test_build_remove_dependency_group():
+    assert build_remove("mkdocs", group="docs", kind="group") == [
+        "uv", "remove", "--group", "docs", "mkdocs",
+    ]
+
+
+def test_build_add_optional_extra_kind():
+    assert build_add(["typer"], group="cli", kind="extra") == [
+        "uv", "add", "--optional", "cli", "typer",
+    ]
+
+
 def test_build_sync_lock_run():
     assert build_sync() == ["uv", "sync"]
     assert build_lock() == ["uv", "lock"]
@@ -72,6 +91,16 @@ async def test_run_streaming_nonzero_exit():
     argv = [sys.executable, "-c", "import sys; sys.exit(3)"]
     exit_code = await run_streaming(argv, on_line=lambda _l: None)
     assert exit_code == 3
+
+
+@pytest.mark.asyncio
+async def test_run_streaming_reaps_on_cancel():
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    task = asyncio.create_task(run_streaming(argv, on_line=lambda _l: None))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 def test_uv_available_true(monkeypatch):

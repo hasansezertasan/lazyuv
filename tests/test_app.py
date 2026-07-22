@@ -19,6 +19,7 @@ async def test_app_loads_project_and_shows_deps():
         # root has one child branch per group: main, cli, dev
         labels = {str(node.label) for node in tree.root.children}
         assert any("main" in label for label in labels)
+        assert any("cli" in label for label in labels)
         assert any("dev" in label for label in labels)
 
 

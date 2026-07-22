@@ -92,7 +92,7 @@ def _collect_dependencies(
     project_table = pyproject.get("project", {})
     deps: list[Dependency] = []
 
-    def add(requirement: str, group: str) -> None:
+    def add(requirement: str, group: str, kind: str) -> None:
         name, spec = split_requirement(requirement)
         version, source = resolved.get(name, (None, "registry"))
         deps.append(
@@ -102,18 +102,25 @@ def _collect_dependencies(
                 group=group,
                 resolved_version=version,
                 source=source,
+                kind=kind,
             )
         )
 
     for requirement in project_table.get("dependencies", []):
-        add(requirement, "main")
+        add(requirement, "main", "main")
 
     for group_name, reqs in project_table.get("optional-dependencies", {}).items():
         for requirement in reqs:
-            add(requirement, group_name)
+            add(requirement, group_name, "extra")
 
     for group_name, reqs in pyproject.get("dependency-groups", {}).items():
+        kind = "dev" if group_name == "dev" else "group"
         for requirement in reqs:
-            add(requirement, group_name)
+            # PEP 735 allows {include-group = "..."} references. The referenced
+            # group is rendered under its own heading, so skip the reference
+            # here rather than treating the dict as a requirement string.
+            if isinstance(requirement, dict):
+                continue
+            add(requirement, group_name, kind)
 
     return deps

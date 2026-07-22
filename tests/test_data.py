@@ -47,6 +47,36 @@ def test_load_scripts():
     assert proj.scripts == [Script("serve", "sample.cli:serve")]
 
 
+def test_load_sets_kind():
+    proj = load_project(FIXTURE).project
+    by_name = {d.name: d for d in proj.dependencies}
+    assert by_name["httpx"].kind == "main"
+    assert by_name["typer"].kind == "extra"   # from [project.optional-dependencies]
+    assert by_name["pytest"].kind == "dev"    # from [dependency-groups].dev
+
+
+def test_load_skips_include_group(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[dependency-groups]\n"
+        'lint = ["ruff>=0.4"]\n'
+        'dev = [{include-group = "lint"}, "pytest>=8"]\n'
+    )
+    result = load_project(tmp_path)
+    assert result.status is LoadStatus.OK
+    pairs = {(d.group, d.name) for d in result.project.dependencies}
+    assert ("lint", "ruff") in pairs
+    assert ("dev", "pytest") in pairs
+    # the {include-group = "lint"} reference must NOT appear as a dependency
+    assert all(d.name for d in result.project.dependencies)
+    lint_kind = {d.name: d.kind for d in result.project.dependencies if d.group == "lint"}
+    assert lint_kind["ruff"] == "group"
+
+
 def test_load_not_a_project(tmp_path):
     result = load_project(tmp_path)
     assert result.status is LoadStatus.NOT_A_PROJECT

@@ -6,6 +6,7 @@ This module never runs subprocesses; it only reads files.
 from __future__ import annotations
 
 import json
+import os
 import re
 import tomllib
 from pathlib import Path
@@ -18,6 +19,7 @@ from lazyuv.models import (
     Project,
     PythonVersion,
     Script,
+    Tool,
 )
 from lazyuv.parsing import canonical_name, split_requirement
 
@@ -331,3 +333,75 @@ def parse_python_list(output: str) -> list[PythonVersion]:
             )
         )
     return versions
+
+
+# --- global state (tools / cache / version) --------------------------------
+
+# A `uv tool list` tool line: "<name> v<version>" (names are single tokens).
+_TOOL_RE = re.compile(r"^(?P<name>\S+) v(?P<version>\S+)")
+
+
+def parse_tool_list(output: str) -> list[Tool]:
+    """Parse `uv tool list` (plain text; uv emits no JSON here) into Tool rows.
+
+    Each tool is a line `name vX.Y.Z` followed by indented `- executable` lines.
+    Lines matching neither shape (e.g. "No tools installed.") are ignored, so
+    empty/absent output yields an empty list.
+    """
+    tools: list[Tool] = []
+    name: str | None = None
+    version = ""
+    executables: list[str] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("-"):
+            exe = stripped.lstrip("-").strip()
+            if name is not None and exe:
+                executables.append(exe)
+            continue
+        match = _TOOL_RE.match(stripped)
+        if not match:
+            continue
+        if name is not None:
+            tools.append(Tool(name, version, tuple(executables)))
+        name, version, executables = match.group("name"), match.group("version"), []
+    if name is not None:
+        tools.append(Tool(name, version, tuple(executables)))
+    return tools
+
+
+def parse_uv_version(output: str) -> str:
+    """Extract a version like "0.11.31" from `uv --version` output.
+
+    Falls back to the stripped raw string if no version-looking token is found.
+    """
+    match = re.search(r"\b(\d+\.\d+\.\d+\S*)", output)
+    return match.group(1) if match else output.strip()
+
+
+def directory_size(path: Path) -> int:
+    """Total size in bytes of all files under `path` (0 if missing/unreadable).
+
+    Tolerant of unreadable entries — a stat failure on one file is skipped rather
+    than aborting the walk.
+    """
+    total = 0
+    for root, _dirs, files in os.walk(path, onerror=lambda _exc: None):
+        for name in files:
+            try:
+                total += (Path(root) / name).lstat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def format_size(num_bytes: int) -> str:
+    """Human-readable size, e.g. 0 -> "0 B", 1536 -> "1.5 KiB"."""
+    size = float(num_bytes)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024 or unit == "GiB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GiB"

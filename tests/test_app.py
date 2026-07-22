@@ -16,7 +16,8 @@ async def test_app_loads_project_and_shows_deps():
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app.project is not None
-        assert app.sub_title == "sample 0.2.0"
+        # subtitle may gain a " · uv <version>" suffix from the version worker
+        assert app.sub_title.startswith("sample 0.2.0")
         tree = app.query_one(DependenciesPanel)
         # root has one child branch per group: main, cli, dev
         labels = {str(node.label) for node in tree.root.children}
@@ -226,7 +227,8 @@ async def test_error_state_clears_stale_panels(tmp_path):
         app.refresh_project()
         await pilot.pause()
         assert app.project is None
-        assert app.sub_title == ""
+        # project name no longer in the subtitle (a " · uv <version>" suffix may remain)
+        assert "sample" not in app.sub_title
         assert len(app.query_one(DependenciesPanel).root.children) == 0
         assert len(app.query_one(ScriptsPanel).children) == 0
 
@@ -531,3 +533,233 @@ def test_help_overlay_lists_new_bindings():
     assert "p" in _HELP and "python" in _HELP.lower()
     assert "S" in _HELP
     assert "v" in _HELP and "venv" in _HELP.lower()
+
+
+# --- Milestone 3: global tools & cache -------------------------------------
+
+_TOOL_LIST = "ruff v0.11.31\n- ruff\nhatch v1.16.5\n- hatch\n- hatchling\n"
+
+
+def _global_capture(cache_dir="/home/x/.cache/uv", tool_list=_TOOL_LIST):
+    async def fake_run_capture(argv, cwd=None):
+        if argv[:3] == ["uv", "tool", "list"]:
+            return 0, tool_list
+        if argv[:3] == ["uv", "cache", "dir"]:
+            return 0, cache_dir + "\n"
+        if argv == ["uv", "--version"]:
+            return 0, "uv 0.11.31 (Homebrew)"
+        return 0, ""
+
+    return fake_run_capture
+
+
+def _capture_streaming(captured):
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    return fake_run_streaming
+
+
+@pytest.mark.asyncio
+async def test_toggle_to_global_loads_tools(monkeypatch):
+    from lazyuv.widgets.tools import ToolsPanel
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.global_mode is True
+        assert app.query_one("#global-panels").display is True
+        assert app.query_one("#project-panels").display is False
+        assert [t.name for t in app.tools] == ["ruff", "hatch"]
+        assert isinstance(app.query_one(ToolsPanel), ToolsPanel)
+        # toggling back restores project mode
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.global_mode is False
+        assert app.query_one("#project-panels").display is True
+
+
+@pytest.mark.asyncio
+async def test_tool_install_flow(monkeypatch):
+    from textual.widgets import Input
+
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("i")
+        await pilot.pause()
+        app.screen.query_one("#tool-package", Input).value = "cowsay"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "tool", "install", "cowsay"]
+
+
+@pytest.mark.asyncio
+async def test_tool_upgrade_all_flow(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("U")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "tool", "upgrade", "--all"]
+
+
+@pytest.mark.asyncio
+async def test_tool_uninstall_confirm_flow(monkeypatch):
+    from lazyuv.widgets.tools import ToolsPanel
+
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        app.query_one(ToolsPanel).index = 0  # "ruff"
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "tool", "uninstall", "ruff"]
+
+
+@pytest.mark.asyncio
+async def test_cache_prune_flow(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("P")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "cache", "prune"]
+
+
+@pytest.mark.asyncio
+async def test_cache_clean_confirm_flow(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "cache", "clean"]
+
+
+@pytest.mark.asyncio
+async def test_cache_size_computed_on_demand(monkeypatch, tmp_path):
+    from lazyuv.widgets.cache import CachePanel
+
+    (tmp_path / "blob").write_bytes(b"x" * 2048)
+    monkeypatch.setattr(
+        "lazyuv.commands.run_capture", _global_capture(cache_dir=str(tmp_path))
+    )
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("z")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        rendered = str(app.query_one(CachePanel).render())
+        assert "KiB" in rendered  # 2048 bytes -> 2.0 KiB
+
+
+@pytest.mark.asyncio
+async def test_self_update_confirm_flow(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("X")
+        await pilot.pause()
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "self", "update"]
+
+
+@pytest.mark.asyncio
+async def test_global_keys_noop_in_project_mode(monkeypatch):
+    from lazyuv.screens.tool_install import ToolInstallScreen
+
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # 'i' (install tool) must do nothing in project mode
+        await pilot.press("i")
+        await pilot.pause()
+        assert not isinstance(app.screen, ToolInstallScreen)
+        # 'U' (upgrade all) must not dispatch a command in project mode
+        await pilot.press("U")
+        await pilot.pause()
+        assert "argv" not in captured
+
+
+@pytest.mark.asyncio
+async def test_project_keys_noop_in_global_mode(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # 's' (sync) is a project action -> no-op in global mode
+        await pilot.press("s")
+        await pilot.pause()
+        assert "argv" not in captured

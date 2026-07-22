@@ -16,18 +16,24 @@ Screen {
     layout: vertical;
 }
 
+#project-panels, #global-panels { height: 1fr; layout: vertical; }
+
 #details { height: 60%; }
 #output { height: 40%; }
 #environment { height: auto; min-height: 5; }
-#dependencies { height: 1fr; }
+#dependencies { height: 1fr; min-height: 5; }
 #scripts { height: 40%; }
+#tools { height: 1fr; min-height: 5; }
+#cache { height: auto; min-height: 6; }
 
-DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel, EnvironmentPanel {
+DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel, EnvironmentPanel,
+ToolsPanel, CachePanel {
     border: round $primary;
     padding: 0 1;
 }
 
-#add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog {
+#add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog,
+#tool-install-dialog {
     background: $panel;
     border: thick $primary;
     padding: 1 2;

@@ -87,10 +87,20 @@ install a Python version, recreate the venv, and run a scoped sync — all keybo
 active warning)? Do we manage only the project venv, or also list/switch arbitrary
 uv-managed Pythons?
 
-## Milestone 3 — Global tools & cache (the "full dashboard")
+## Milestone 3 — Global tools & cache (the "full dashboard") — *shipped*
 
 **Intent:** step outside a single project to manage machine-wide uv state — the
 breadth that turns lazyuv from a project tool into a uv cockpit.
+
+*Implemented* (design:
+`docs/superpowers/specs/2026-07-22-global-tools-cache-design.md`). A `g` toggle swaps
+the left column into a **global mode** with a **Tools** panel (`uv tool list` — parsed
+from plain text, uv emits no JSON here) and a **Cache** panel. Tools: `i` install, `u`
+upgrade, `U` upgrade all, `x` uninstall (confirm). Cache: `c` clean (confirm), `P`
+prune, `z` size (computed on demand in a background thread — never blocks the view).
+`X` runs `uv self update` (confirmed; a package-manager install's refusal is surfaced
+verbatim, not faked), with the uv version shown in the subtitle. Queries reuse M2's
+`run_capture` seam.
 
 **Features:**
 - Global tools / uvx: `uv tool list`, `uv tool install`, `uv tool upgrade [--all]`,

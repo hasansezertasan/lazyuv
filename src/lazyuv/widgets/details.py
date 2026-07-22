@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.widgets import Static
 
-from lazyuv.models import Dependency, Script
+from lazyuv.models import Dependency, Script, Tool
 
 
 class DetailsPanel(Static):
@@ -28,3 +28,9 @@ class DetailsPanel(Static):
 
     def show_script(self, script: Script) -> None:
         self.update(f"[b]{script.name}[/b]\ntarget: {script.target}")
+
+    def show_tool(self, tool: Tool) -> None:
+        executables = ", ".join(tool.executables) or "—"
+        self.update(
+            f"[b]{tool.name}[/b]  {tool.version}\nexecutables: {executables}"
+        )

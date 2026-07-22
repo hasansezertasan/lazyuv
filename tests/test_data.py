@@ -360,3 +360,74 @@ def test_parse_python_list_skips_entries_without_key():
 def test_parse_python_list_malformed_is_empty():
     assert parse_python_list("not json") == []
     assert parse_python_list("") == []
+
+
+# --- global state: tools / cache / version ---------------------------------
+
+
+def test_parse_tool_list_multiple_tools_and_executables():
+    from lazyuv.data import parse_tool_list
+    from lazyuv.models import Tool
+
+    output = (
+        "ruff v0.11.31\n"
+        "- ruff\n"
+        "homebrew-pypi-poet v0.10.0\n"
+        "- poet\n"
+        "hatch v1.16.5\n"
+        "- hatch\n"
+        "- hatchling\n"
+    )
+    tools = parse_tool_list(output)
+    assert tools == [
+        Tool("ruff", "0.11.31", ("ruff",)),
+        Tool("homebrew-pypi-poet", "0.10.0", ("poet",)),
+        Tool("hatch", "1.16.5", ("hatch", "hatchling")),
+    ]
+
+
+def test_parse_tool_list_tool_without_executables():
+    from lazyuv.data import parse_tool_list
+
+    tools = parse_tool_list("mytool v1.2.3\n")
+    assert tools == [__import__("lazyuv.models", fromlist=["Tool"]).Tool("mytool", "1.2.3", ())]
+
+
+def test_parse_tool_list_empty_and_no_tools_message():
+    from lazyuv.data import parse_tool_list
+
+    assert parse_tool_list("") == []
+    assert parse_tool_list("No tools installed.\n") == []
+
+
+def test_parse_uv_version_extracts_and_falls_back():
+    from lazyuv.data import parse_uv_version
+
+    assert parse_uv_version("uv 0.11.31 (Homebrew 2026-07-22 aarch64-apple-darwin)") == "0.11.31"
+    assert parse_uv_version("weird output") == "weird output"
+
+
+def test_directory_size_sums_files(tmp_path):
+    from lazyuv.data import directory_size
+
+    (tmp_path / "a").write_bytes(b"x" * 100)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "b").write_bytes(b"y" * 50)
+    assert directory_size(tmp_path) == 150
+
+
+def test_directory_size_missing_dir_is_zero(tmp_path):
+    from lazyuv.data import directory_size
+
+    assert directory_size(tmp_path / "nope") == 0
+
+
+def test_format_size_units():
+    from lazyuv.data import format_size
+
+    assert format_size(0) == "0 B"
+    assert format_size(512) == "512 B"
+    assert format_size(1536) == "1.5 KiB"
+    assert format_size(5 * 1024 * 1024) == "5.0 MiB"
+    assert format_size(2 * 1024**3) == "2.0 GiB"

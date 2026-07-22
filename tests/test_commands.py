@@ -207,3 +207,35 @@ def test_uv_available_true(monkeypatch):
 def test_uv_available_false(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert uv_available() is False
+
+
+def test_build_tool_commands():
+    from lazyuv.commands import (
+        build_tool_install,
+        build_tool_list,
+        build_tool_uninstall,
+        build_tool_upgrade,
+        build_tool_upgrade_all,
+    )
+
+    assert build_tool_list() == ["uv", "tool", "list"]
+    assert build_tool_install("ruff") == ["uv", "tool", "install", "ruff"]
+    assert build_tool_upgrade("ruff") == ["uv", "tool", "upgrade", "ruff"]
+    assert build_tool_upgrade_all() == ["uv", "tool", "upgrade", "--all"]
+    assert build_tool_uninstall("ruff") == ["uv", "tool", "uninstall", "ruff"]
+
+
+def test_build_cache_and_self_commands():
+    from lazyuv.commands import (
+        build_cache_clean,
+        build_cache_dir,
+        build_cache_prune,
+        build_self_update,
+        build_uv_version,
+    )
+
+    assert build_cache_dir() == ["uv", "cache", "dir"]
+    assert build_cache_clean() == ["uv", "cache", "clean"]
+    assert build_cache_prune() == ["uv", "cache", "prune"]
+    assert build_uv_version() == ["uv", "--version"]
+    assert build_self_update() == ["uv", "self", "update"]

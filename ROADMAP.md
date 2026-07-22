@@ -33,8 +33,9 @@ directory:
 - **View dependencies** — `pyproject.toml` + `uv.lock` rendered as a collapsible
   tree grouped by group (main / dev / optional), with resolved versions and source
   (registry / git / path).
-- **Add / remove** — `uv add [--dev|--optional <group>] <pkgs>`, `uv remove …`, via
-  a modal with group selection and a remove confirmation.
+- **Add / remove** — `uv add [--dev|--group <group>|--optional <group>] <pkgs>`,
+  `uv remove …`, via a modal with group selection (routed by dependency kind) and a
+  remove confirmation.
 - **Sync / lock** — `uv sync`, `uv lock`, with live-streamed output.
 - **Run scripts** — `[project.scripts]` entries via `uv run <name>`.
 - **Filter** the dependency list; **help** overlay; context-sensitive keybinding bar.

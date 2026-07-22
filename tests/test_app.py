@@ -151,10 +151,10 @@ async def test_selection_preserved_across_refresh():
         await pilot.pause()
         panel = app.query_one(DependenciesPanel)
         leaf = next(
-            l
-            for g in panel.root.children
-            for l in g.children
-            if l.data is not None and l.data.name == "pytest"
+            node
+            for group_node in panel.root.children
+            for node in group_node.children
+            if node.data is not None and node.data.name == "pytest"
         )
         panel.move_cursor(leaf)
         await pilot.pause()
@@ -163,6 +163,18 @@ async def test_selection_preserved_across_refresh():
         await pilot.pause()
         selected = app.query_one(DependenciesPanel).selected_dependency
         assert selected is not None and selected.name == "pytest"
+
+
+def test_add_dialog_keeps_reserved_name_extras():
+    from lazyuv.screens.add_dependency import AddDependencyScreen
+
+    screen = AddDependencyScreen([("dev", "extra"), ("docs", "group")])
+    # The dev/main defaults stay, AND an optional extra named "dev" is selectable.
+    assert ("dev", "dev") in screen._options
+    assert ("dev", "extra") in screen._options
+    assert ("docs", "group") in screen._options
+    # No duplicate default pairs.
+    assert screen._options.count(("main", "main")) == 1
 
 
 @pytest.mark.asyncio

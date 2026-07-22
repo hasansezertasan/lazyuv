@@ -20,9 +20,11 @@ class AddDependencyScreen(ModalScreen[tuple[list[str], str, str] | None]):
     def __init__(self, groups: list[tuple[str, str]]) -> None:
         super().__init__()
         # main + dev are always available; append existing (name, kind) pairs.
+        # Deduplicate exact pairs (not names), so an optional extra literally named
+        # "dev" or "main" — distinct from the dev/main defaults — stays selectable.
         options: list[tuple[str, str]] = [("main", "main"), ("dev", "dev")]
         for name, kind in groups:
-            if name not in ("main", "dev") and (name, kind) not in options:
+            if (name, kind) not in options:
                 options.append((name, kind))
         self._options = options
 

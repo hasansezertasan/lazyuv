@@ -1,9 +1,22 @@
 from pathlib import Path
 
-from lazyuv.data import load_project
-from lazyuv.models import Dependency, LoadStatus, Project, Script
+from lazyuv.data import (
+    _compute_drift,
+    _read_environment,
+    _read_pin,
+    _read_venv,
+    load_project,
+    parse_python_list,
+)
+from lazyuv.models import Dependency, LoadStatus, Project, PythonVersion, Script
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
+
+
+def _write_venv(root: Path, version: str, home: str = "/usr/bin") -> None:
+    venv = root / ".venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text(f"home = {home}\nversion_info = {version}\n")
 
 
 def test_dependency_defaults():
@@ -194,3 +207,96 @@ def test_read_lock_skips_nameless_package(tmp_path):
     by_name = {d.name: d for d in proj.dependencies}
     assert by_name["httpx"].resolved_version == "0.28.1"
     assert all(d.name for d in proj.dependencies)
+
+
+# --- environment (Python / venv) read path ---------------------------------
+
+
+def test_read_pin_first_nonempty_line(tmp_path):
+    (tmp_path / ".python-version").write_text("\n3.14\n3.12\n")
+    assert _read_pin(tmp_path) == "3.14"
+
+
+def test_read_pin_absent(tmp_path):
+    assert _read_pin(tmp_path) is None
+
+
+def test_read_venv_version_info_and_home(tmp_path):
+    _write_venv(tmp_path, "3.14.0", home="/opt/py/bin")
+    version, home = _read_venv(tmp_path / ".venv" / "pyvenv.cfg")
+    assert version == "3.14.0"
+    assert home == "/opt/py/bin"
+
+
+def test_read_venv_falls_back_to_version_key(tmp_path):
+    venv = tmp_path / ".venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text("home = /x\nversion = 3.13.1\n")
+    version, _home = _read_venv(venv / "pyvenv.cfg")
+    assert version == "3.13.1"
+
+
+def test_read_venv_absent(tmp_path):
+    assert _read_venv(tmp_path / ".venv" / "pyvenv.cfg") == (None, None)
+
+
+def test_compute_drift_none_without_venv():
+    assert _compute_drift(None, "3.14", ">=3.14") is None
+
+
+def test_compute_drift_pin_mismatch():
+    note = _compute_drift("3.12.0", "3.14", ">=3.10")
+    assert note is not None and "3.12.0" in note and "3.14" in note
+
+
+def test_compute_drift_pin_matches_by_component():
+    # pin 3.14 matches venv 3.14.0 (component prefix), and pin drives the check
+    assert _compute_drift("3.14.0", "3.14", "==3.10") is None
+    # pin 3.1 must NOT match venv 3.14.0 (component-wise, not string startswith)
+    assert _compute_drift("3.14.0", "3.1", "") is not None
+
+
+def test_compute_drift_requires_python_floor_below():
+    note = _compute_drift("3.12.0", None, ">=3.14")
+    assert note is not None and "below" in note
+
+
+def test_compute_drift_requires_python_floor_satisfied():
+    assert _compute_drift("3.14.0", None, ">=3.14") is None
+
+
+def test_compute_drift_complex_requires_python_is_unknown():
+    # A specifier we can't safely parse must never raise a false drift alarm.
+    assert _compute_drift("3.12.0", None, ">=3.11,<4.0") is None
+
+
+def test_read_environment_composes(tmp_path):
+    (tmp_path / ".python-version").write_text("3.14\n")
+    _write_venv(tmp_path, "3.12.0")
+    env = _read_environment(tmp_path, ">=3.10")
+    assert env.pinned_python == "3.14"
+    assert env.venv_python == "3.12.0"
+    assert env.venv_path == ".venv"
+    assert env.drift is not None  # venv 3.12 != pin 3.14
+
+
+def test_load_project_attaches_environment():
+    proj = load_project(FIXTURE).project
+    assert proj.environment is not None
+
+
+def test_parse_python_list_installed_and_available():
+    output = (
+        '[{"version": "3.14.0", "path": "/opt/py/3.14/bin/python"},'
+        ' {"version": "3.12.5", "path": null}]'
+    )
+    versions = parse_python_list(output)
+    assert versions == [
+        PythonVersion(version="3.14.0", installed=True, path="/opt/py/3.14/bin/python"),
+        PythonVersion(version="3.12.5", installed=False, path=None),
+    ]
+
+
+def test_parse_python_list_malformed_is_empty():
+    assert parse_python_list("not json") == []
+    assert parse_python_list("") == []

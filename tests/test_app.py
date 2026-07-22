@@ -227,3 +227,127 @@ async def test_error_state_clears_stale_panels(tmp_path):
         assert app.sub_title == ""
         assert len(app.query_one(DependenciesPanel).root.children) == 0
         assert len(app.query_one(ScriptsPanel).children) == 0
+
+
+# --- Milestone 2: environments & Python versions ---------------------------
+
+
+def _write_project(root: Path, requires_python: str = ">=3.14") -> None:
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        f'requires-python = "{requires_python}"\n'
+        "dependencies = []\n\n"
+        "[project.optional-dependencies]\n"
+        'cli = ["typer"]\n\n'
+        "[dependency-groups]\n"
+        'docs = ["mkdocs"]\n'
+    )
+
+
+def _write_venv(root: Path, version: str) -> None:
+    venv = root / ".venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text(f"home = /x\nversion_info = {version}\n")
+
+
+@pytest.mark.asyncio
+async def test_environment_panel_shows_drift(tmp_path):
+    from lazyuv.widgets.environment import EnvironmentPanel
+
+    _write_project(tmp_path)
+    (tmp_path / ".python-version").write_text("3.14\n")
+    _write_venv(tmp_path, "3.12.0")  # venv 3.12 != pin 3.14 -> drift
+
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one(EnvironmentPanel)
+        rendered = str(panel.render())
+        assert "3.12.0" in rendered
+        assert "drift" in rendered
+        assert "3.14" in rendered
+
+
+@pytest.mark.asyncio
+async def test_sync_options_frozen_builds_argv(monkeypatch):
+    from textual.widgets import Checkbox
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("S")
+        await pilot.pause()
+        app.screen.query_one("#frozen", Checkbox).value = True
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "sync", "--frozen"]
+
+
+@pytest.mark.asyncio
+async def test_python_picker_install_builds_argv(monkeypatch):
+    from textual.widgets import ListView
+
+    captured = {}
+
+    async def fake_run_capture(argv, cwd=None):
+        return 0, (
+            '[{"version": "3.14.0", "path": "/opt/py/bin/python"},'
+            ' {"version": "3.12.5", "path": null}]'
+        )
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # pick the second (available) version and install it
+        app.screen.query_one("#python-list", ListView).index = 1
+        await pilot.pause()
+        await pilot.click("#install")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "python", "install", "3.12.5"]
+
+
+@pytest.mark.asyncio
+async def test_recreate_venv_confirm_builds_argv(monkeypatch, tmp_path):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_project(tmp_path)
+    (tmp_path / ".python-version").write_text("3.14\n")
+    _write_venv(tmp_path, "3.14.0")
+
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause()
+        await pilot.click("#yes")  # confirm recreate
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "venv", "--python", "3.14"]

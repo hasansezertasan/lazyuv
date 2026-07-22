@@ -16,15 +16,18 @@ Screen {
     layout: vertical;
 }
 
-#dependencies, #details { height: 60%; }
-#scripts, #output { height: 40%; }
+#details { height: 60%; }
+#output { height: 40%; }
+#environment { height: auto; min-height: 5; }
+#dependencies { height: 1fr; }
+#scripts { height: 40%; }
 
-DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel {
+DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel, EnvironmentPanel {
     border: round $primary;
     padding: 0 1;
 }
 
-#add-dialog, #confirm-dialog, #help-dialog {
+#add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog {
     background: $panel;
     border: thick $primary;
     padding: 1 2;
@@ -32,6 +35,10 @@ DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel {
     height: auto;
     align: center middle;
 }
+
+#python-list { height: auto; max-height: 12; }
+#python-buttons { height: auto; }
+#sync-dialog SelectionList { height: auto; max-height: 6; }
 
 #filter-dialog {
     background: $panel;

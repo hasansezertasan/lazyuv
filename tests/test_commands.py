@@ -6,9 +6,15 @@ import pytest
 from lazyuv.commands import (
     build_add,
     build_lock,
+    build_python_install,
+    build_python_list,
+    build_python_pin,
+    build_python_uninstall,
     build_remove,
     build_run,
     build_sync,
+    build_venv,
+    run_capture,
     run_streaming,
     uv_available,
 )
@@ -86,6 +92,53 @@ def test_build_sync_lock_run():
     assert build_sync() == ["uv", "sync"]
     assert build_lock() == ["uv", "lock"]
     assert build_run("serve") == ["uv", "run", "serve"]
+
+
+def test_build_sync_scoped():
+    assert build_sync(extras=["cli"], groups=["docs"], no_dev=True, frozen=True) == [
+        "uv", "sync",
+        "--extra", "cli",
+        "--group", "docs",
+        "--no-dev",
+        "--frozen",
+    ]
+
+
+def test_build_sync_partial_options():
+    assert build_sync(frozen=True) == ["uv", "sync", "--frozen"]
+    assert build_sync(extras=["a", "b"]) == [
+        "uv", "sync", "--extra", "a", "--extra", "b",
+    ]
+
+
+def test_build_python_commands():
+    assert build_python_list() == [
+        "uv", "python", "list", "--output-format", "json",
+    ]
+    assert build_python_install("3.14") == ["uv", "python", "install", "3.14"]
+    assert build_python_pin("3.14") == ["uv", "python", "pin", "3.14"]
+    assert build_python_uninstall("3.12") == ["uv", "python", "uninstall", "3.12"]
+
+
+def test_build_venv():
+    assert build_venv() == ["uv", "venv"]
+    assert build_venv("3.14") == ["uv", "venv", "--python", "3.14"]
+
+
+@pytest.mark.asyncio
+async def test_run_capture_returns_exit_code_and_output():
+    argv = [sys.executable, "-c", "print('hello'); print('world')"]
+    exit_code, output = await run_capture(argv)
+    assert exit_code == 0
+    assert output.splitlines() == ["hello", "world"]
+
+
+@pytest.mark.asyncio
+async def test_run_capture_nonzero_exit():
+    argv = [sys.executable, "-c", "import sys; sys.stdout.write('x'); sys.exit(2)"]
+    exit_code, output = await run_capture(argv)
+    assert exit_code == 2
+    assert "x" in output
 
 
 @pytest.mark.asyncio

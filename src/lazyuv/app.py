@@ -11,14 +11,17 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Header, ListView, Tree
 
 from lazyuv import commands
-from lazyuv.data import load_project
+from lazyuv.data import load_project, parse_python_list
 from lazyuv.models import LoadStatus, Project
 from lazyuv.screens.add_dependency import AddDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
+from lazyuv.screens.python import PythonPickerScreen
+from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.widgets.dependencies import DependenciesPanel
 from lazyuv.widgets.details import DetailsPanel
+from lazyuv.widgets.environment import EnvironmentPanel
 from lazyuv.widgets.output import OutputPanel
 from lazyuv.widgets.scripts import ScriptsPanel
 
@@ -35,8 +38,11 @@ class LazyUvApp(App[None]):
         Binding("a", "add", "add"),
         Binding("d", "remove", "remove"),
         Binding("s", "sync", "sync"),
+        Binding("S", "sync_options", "sync opts", key_display="S"),
         Binding("l", "lock", "lock"),
         Binding("r", "run", "run"),
+        Binding("p", "python", "python"),
+        Binding("v", "venv", "venv"),
         Binding("slash", "filter", "filter", key_display="/"),
     ]
 
@@ -51,6 +57,7 @@ class LazyUvApp(App[None]):
         yield Header()
         with Vertical(id="body"):
             with Vertical(id="left"):
+                yield EnvironmentPanel()
                 yield DependenciesPanel()
                 yield ScriptsPanel()
             with Vertical(id="right"):
@@ -87,6 +94,7 @@ class LazyUvApp(App[None]):
                 panel.restore_selection, previous.group, previous.name
             )
         self.query_one(ScriptsPanel).load(self.project.scripts)
+        self.query_one(EnvironmentPanel).show(self.project.environment)
 
     def _clear_project_panels(self) -> None:
         """Reset project-scoped views so a lost/invalid project shows no stale data."""
@@ -94,6 +102,7 @@ class LazyUvApp(App[None]):
         self.sub_title = ""
         self.query_one(DependenciesPanel).set_filter(self._filter_text, [])
         self.query_one(ScriptsPanel).load([])
+        self.query_one(EnvironmentPanel).show(None)
 
     # --- selection wiring --------------------------------------------------
 
@@ -169,6 +178,68 @@ class LazyUvApp(App[None]):
                 self._run_uv(commands.build_remove(dep.name, dep.group, dep.kind))
 
         self.push_screen(ConfirmScreen(f"Remove {dep.name}?"), on_close)
+
+    def action_sync_options(self) -> None:
+        if self.project is None:
+            return
+
+        def on_close(result: tuple[list[str], list[str], bool, bool] | None) -> None:
+            if result is None:
+                return
+            extras, groups, no_dev, frozen = result
+            self._run_uv(
+                commands.build_sync(
+                    extras=extras, groups=groups, no_dev=no_dev, frozen=frozen
+                )
+            )
+
+        self.push_screen(SyncOptionsScreen(self.project.groups), on_close)
+
+    def action_python(self) -> None:
+        """Read `uv python list` (a query, not an action), then open the picker."""
+        if self._busy:
+            self.bell()
+            return
+        self.run_worker(self._open_python_picker())
+
+    async def _open_python_picker(self) -> None:
+        exit_code, output = await commands.run_capture(
+            commands.build_python_list(), cwd=self.root
+        )
+        versions = parse_python_list(output) if exit_code == 0 else []
+
+        def on_close(result: tuple[str, str] | None) -> None:
+            if result is None:
+                return
+            action, version = result
+            builders = {
+                "install": commands.build_python_install,
+                "pin": commands.build_python_pin,
+                "uninstall": commands.build_python_uninstall,
+            }
+            builder = builders.get(action)
+            if builder is not None:
+                self._run_uv(builder(version))
+
+        self.push_screen(PythonPickerScreen(versions), on_close)
+
+    def action_venv(self) -> None:
+        if self.project is None:
+            return
+        env = self.project.environment
+        pin = env.pinned_python if env else None
+
+        def recreate(confirmed: bool) -> None:
+            if confirmed:
+                self._run_uv(commands.build_venv(pin))
+
+        if env is not None and env.venv_path is not None:
+            self.push_screen(
+                ConfirmScreen("Recreate .venv? The existing venv is replaced."),
+                recreate,
+            )
+        else:
+            recreate(True)
 
     def action_filter(self) -> None:
         if self.project is None:

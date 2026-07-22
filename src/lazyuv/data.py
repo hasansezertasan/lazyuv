@@ -5,14 +5,18 @@ This module never runs subprocesses; it only reads files.
 
 from __future__ import annotations
 
+import json
+import re
 import tomllib
 from pathlib import Path
 
 from lazyuv.models import (
     Dependency,
+    Environment,
     LoadResult,
     LoadStatus,
     Project,
+    PythonVersion,
     Script,
 )
 from lazyuv.parsing import canonical_name, split_requirement
@@ -48,13 +52,15 @@ def load_project(root: Path) -> LoadResult:
         for name, target in sorted(project_table.get("scripts", {}).items())
     ]
 
+    requires_python = project_table.get("requires-python", "")
     project = Project(
         name=project_table.get("name", root.name),
         version=project_table.get("version", "0.0.0"),
-        requires_python=project_table.get("requires-python", ""),
+        requires_python=requires_python,
         dependencies=dependencies,
         scripts=scripts,
         groups=_collect_groups(pyproject),
+        environment=_read_environment(root, requires_python),
     )
     return LoadResult(status=LoadStatus.OK, project=project)
 
@@ -165,3 +171,130 @@ def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
     for name in pyproject.get("dependency-groups", {}):
         groups.append((name, "dev" if name == "dev" else "group"))
     return groups
+
+
+# --- environment (Python / venv) read path --------------------------------
+
+# Matches a leading operator + bare "major.minor" in a requires-python string,
+# e.g. ">=3.14", "==3.12", "~=3.11". Anything more complex is treated as unknown.
+_REQUIRES_RE = re.compile(r"^\s*(>=|==|~=)\s*(\d+)\.(\d+)")
+
+
+def _read_pin(root: Path) -> str | None:
+    """Return the pinned Python from `.python-version`, or None.
+
+    uv writes one version per line; the first non-empty line is the active pin.
+    Missing/blank/unreadable → None.
+    """
+    try:
+        text = (root / ".python-version").read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _read_venv(cfg_path: Path) -> tuple[str | None, str | None]:
+    """Return (python_version, home) from a `pyvenv.cfg`, or (None, None).
+
+    pyvenv.cfg is a flat `key = value` file. uv writes `version_info = 3.14.0`;
+    the stdlib venv writes `version = 3.14.0`. Either is accepted. Missing or
+    unreadable file → (None, None).
+    """
+    try:
+        text = cfg_path.read_text()
+    except OSError:
+        return None, None
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            values[key.strip().lower()] = value.strip()
+    version = values.get("version_info") or values.get("version")
+    return version or None, values.get("home") or None
+
+
+def _version_prefix_matches(version: str, prefix: str) -> bool:
+    """True when `version`'s leading components equal every component of `prefix`.
+
+    Component-wise (not string startswith), so pin "3.1" does NOT match "3.14.0".
+    """
+    got = version.split(".")
+    want = prefix.split(".")
+    return len(got) >= len(want) and got[: len(want)] == want
+
+
+def _compute_drift(
+    venv_python: str | None, pinned: str | None, requires_python: str
+) -> str | None:
+    """Describe how the venv Python misaligns with the pin / requires-python.
+
+    Conservative by design: a pin drives an exact component-prefix check; without
+    a pin, only a bare `>=`/`==`/`~=` major.minor requires-python is compared
+    (leading major.minor). Anything ambiguous returns None — never a false alarm.
+    """
+    if not venv_python:
+        return None
+    if pinned:
+        if not _version_prefix_matches(venv_python, pinned):
+            return f"venv Python {venv_python} ≠ pinned {pinned}"
+        return None
+    match = _REQUIRES_RE.match(requires_python)
+    if not match:
+        return None
+    op, major, minor = match.group(1), int(match.group(2)), int(match.group(3))
+    parts = venv_python.split(".")
+    try:
+        got = (int(parts[0]), int(parts[1]))
+    except IndexError, ValueError:
+        return None
+    want = (major, minor)
+    if op in (">=", "~=") and got < want:
+        return f"venv Python {venv_python} below requires-python {requires_python}"
+    if op == "==" and got != want:
+        return f"venv Python {venv_python} ≠ requires-python {requires_python}"
+    return None
+
+
+def _read_environment(root: Path, requires_python: str) -> Environment:
+    """Compose the project's Python/venv state from files only."""
+    pinned = _read_pin(root)
+    venv_dir = root / ".venv"
+    venv_python, _home = _read_venv(venv_dir / "pyvenv.cfg")
+    venv_path = ".venv" if venv_dir.is_dir() else None
+    drift = _compute_drift(venv_python, pinned, requires_python)
+    return Environment(
+        venv_path=venv_path,
+        venv_python=venv_python,
+        pinned_python=pinned,
+        drift=drift,
+    )
+
+
+def parse_python_list(output: str) -> list[PythonVersion]:
+    """Parse `uv python list --output-format json` into PythonVersion rows.
+
+    A version is "installed" when uv reports a local `path` for it. Malformed or
+    empty output → empty list (the picker just shows nothing to install/pin).
+    """
+    try:
+        entries = json.loads(output)
+    except json.JSONDecodeError, ValueError:
+        return []
+    if not isinstance(entries, list):
+        return []
+    versions: list[PythonVersion] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        version = entry.get("version")
+        if not version:
+            continue
+        path = entry.get("path")
+        versions.append(
+            PythonVersion(version=version, installed=path is not None, path=path)
+        )
+    return versions

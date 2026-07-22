@@ -35,6 +35,31 @@ class Script:
     target: str               # entry point string, e.g. "myproject.cli:main"
 
 
+@dataclass(frozen=True, slots=True)
+class Environment:
+    """The project's Python/venv state, read from files (no subprocess).
+
+    Everything is best-effort: a field is None when the source file is absent or
+    unparseable. `drift` is computed on read (venv Python vs. pin / requires-python)
+    using conservative comparison only — never a false alarm; ambiguous cases stay
+    None. See the M2 design spec.
+    """
+
+    venv_path: str | None = None  # ".venv" when present, else None
+    venv_python: str | None = None  # version from .venv/pyvenv.cfg, e.g. "3.14.0"
+    pinned_python: str | None = None  # from .python-version, e.g. "3.14"
+    drift: str | None = None  # human-readable note when misaligned, else None
+
+
+@dataclass(frozen=True, slots=True)
+class PythonVersion:
+    """A Python interpreter reported by `uv python list`."""
+
+    version: str  # e.g. "3.14.0"
+    installed: bool  # True when uv reports a local path for it
+    path: str | None = None  # interpreter path when installed, else None
+
+
 @dataclass(slots=True)
 class Project:
     name: str
@@ -45,6 +70,8 @@ class Project:
     # Declared (name, kind) groups from the TOML tables, including empty ones so
     # the UI can offer them as add targets even before they contain a dependency.
     groups: list[tuple[str, str]] = field(default_factory=list)
+    # Python/venv state; None only when this is not a loaded project.
+    environment: Environment | None = None
 
 
 @dataclass(slots=True)

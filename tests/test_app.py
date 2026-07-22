@@ -102,3 +102,64 @@ async def test_add_flow_runs_mocked_uv(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == ["uv", "add", "cowsay"]
+
+
+@pytest.mark.asyncio
+async def test_add_to_optional_extra_routes_optional(monkeypatch):
+    from textual.widgets import Input, Select
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        screen = app.screen
+        # 'cli' is an optional-dependency extra in the fixture -> must use --optional
+        index = next(i for i, (n, _k) in enumerate(screen._options) if n == "cli")
+        screen.query_one("#group", Select).value = index
+        screen.query_one("#packages", Input).value = "httpx"
+        await pilot.pause()
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "add", "--optional", "cli", "httpx"]
+
+
+@pytest.mark.asyncio
+async def test_filter_updates_border_title():
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        assert panel.border_title == "Dependencies"
+        panel.set_filter("typ", app.project.dependencies)
+        assert "typ" in panel.border_title
+
+
+@pytest.mark.asyncio
+async def test_selection_preserved_across_refresh():
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        leaf = next(
+            l
+            for g in panel.root.children
+            for l in g.children
+            if l.data is not None and l.data.name == "pytest"
+        )
+        panel.move_cursor(leaf)
+        await pilot.pause()
+        app.refresh_project()
+        await pilot.pause()
+        await pilot.pause()
+        selected = app.query_one(DependenciesPanel).selected_dependency
+        assert selected is not None and selected.name == "pytest"

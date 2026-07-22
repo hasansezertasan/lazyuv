@@ -13,6 +13,12 @@ from pathlib import Path
 
 
 def _group_flags(group: str, kind: str = "extra") -> list[str]:
+    """Map a dependency's (group, kind) to uv's target flags.
+
+    `main`/`dev` are recognized by name; any other group routes by kind —
+    `--group` for PEP 735 dependency groups, `--optional` for optional-dependency
+    extras.
+    """
     if group == "main":
         return []
     if group == "dev":

@@ -8,25 +8,36 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select
 
 
-class AddDependencyScreen(ModalScreen[tuple[list[str], str] | None]):
-    """Dismisses with (packages, group) or None if cancelled."""
+class AddDependencyScreen(ModalScreen[tuple[list[str], str, str] | None]):
+    """Dismisses with (packages, group, kind) or None if cancelled.
 
-    def __init__(self, groups: list[str]) -> None:
+    `groups` is the list of existing (name, kind) pairs for non-main/dev groups,
+    so the modal can carry each group's kind (extra vs. dependency group) back to
+    the caller unambiguously — even when an extra and a dependency group share a
+    name.
+    """
+
+    def __init__(self, groups: list[tuple[str, str]]) -> None:
         super().__init__()
-        # main + dev always available, plus any existing optional groups.
-        options = ["main", "dev", *[g for g in groups if g not in ("main", "dev")]]
-        self._group_options = options
+        # main + dev are always available; append existing (name, kind) pairs.
+        options: list[tuple[str, str]] = [("main", "main"), ("dev", "dev")]
+        for name, kind in groups:
+            if name not in ("main", "dev") and (name, kind) not in options:
+                options.append((name, kind))
+        self._options = options
 
     def compose(self) -> ComposeResult:
+        names = [name for name, _ in self._options]
+        # Select values are indices into self._options; disambiguate the label
+        # only when the same name exists as both an extra and a dependency group.
+        select_options = [
+            (name if names.count(name) == 1 else f"{name} ({kind})", index)
+            for index, (name, kind) in enumerate(self._options)
+        ]
         with Vertical(id="add-dialog"):
             yield Label("Add dependencies")
             yield Input(placeholder="package names, space-separated", id="packages")
-            yield Select(
-                [(g, g) for g in self._group_options],
-                value="main",
-                id="group",
-                allow_blank=False,
-            )
+            yield Select(select_options, value=0, id="group", allow_blank=False)
             yield Button("Add", variant="primary", id="ok")
             yield Button("Cancel", id="cancel")
 
@@ -38,8 +49,8 @@ class AddDependencyScreen(ModalScreen[tuple[list[str], str] | None]):
         if not packages:
             self.dismiss(None)
             return
-        group = self.query_one("#group", Select).value
-        self.dismiss((packages, str(group)))
+        group, kind = self._options[int(self.query_one("#group", Select).value)]
+        self.dismiss((packages, group, kind))
 
     def key_escape(self) -> None:
         self.dismiss(None)

@@ -77,7 +77,7 @@ def _read_lock(lock_path: Path) -> dict[str, tuple[str, str]]:
         name = canonical_name(package.get("name", ""))
         version = package.get("version", "")
         source_dict = package.get("source", {})
-        label = "registry"
+        label = "other"
         for key in source_dict:
             if key in _SOURCE_LABELS:
                 label = _SOURCE_LABELS[key]

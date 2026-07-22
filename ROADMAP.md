@@ -158,6 +158,10 @@ Lower-priority or design-uncertain items; promoted into a milestone when justifi
 - **`uv version`** — read/bump the project version from the UI.
 - **Diff view** — show what a pending `uv lock`/`uv sync` *would* change before
   applying.
+- **Run scripts with arguments** — v1 runs `uv run <script>` with no extra args;
+  add an args prompt (`uv run <script> -- <args>`).
+- **Preserve selection UX** — v1 restores the highlighted dependency across
+  refreshes; extend the same to the scripts panel and scroll position.
 
 ## Non-functional & cross-cutting
 

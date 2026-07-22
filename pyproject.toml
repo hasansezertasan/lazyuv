@@ -5,7 +5,7 @@ description = "A terminal UI for uv project workflows"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "textual>=0.60",
+    "textual>=8,<9",
 ]
 
 [project.scripts]

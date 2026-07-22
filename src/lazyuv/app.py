@@ -8,11 +8,11 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, ListView, Tree
 
 from lazyuv import commands
 from lazyuv.data import load_project
-from lazyuv.models import Dependency, LoadStatus, Project, Script
+from lazyuv.models import LoadStatus, Project
 from lazyuv.screens.add_dependency import AddDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
 from lazyuv.screens.filter import FilterScreen
@@ -77,19 +77,25 @@ class LazyUvApp(App[None]):
 
         self.project = result.project
         self.sub_title = f"{self.project.name} {self.project.version}"
-        self.query_one(DependenciesPanel).set_filter(
-            self._filter_text, self.project.dependencies
-        )
+        panel = self.query_one(DependenciesPanel)
+        previous = panel.selected_dependency
+        panel.set_filter(self._filter_text, self.project.dependencies)
+        if previous is not None:
+            # Defer until the rebuilt tree is laid out; move_cursor needs the new
+            # nodes to have real line numbers.
+            self.call_after_refresh(
+                panel.restore_selection, previous.group, previous.name
+            )
         self.query_one(ScriptsPanel).load(self.project.scripts)
 
     # --- selection wiring --------------------------------------------------
 
-    def on_tree_node_highlighted(self, event) -> None:
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         dep = self.query_one(DependenciesPanel).selected_dependency
         if dep is not None:
             self.query_one(DetailsPanel).show_dependency(dep)
 
-    def on_list_view_highlighted(self, event) -> None:
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         script = self.query_one(ScriptsPanel).selected_script
         if script is not None:
             self.query_one(DetailsPanel).show_script(script)
@@ -138,16 +144,15 @@ class LazyUvApp(App[None]):
     def action_add(self) -> None:
         if self.project is None:
             return
-        kinds = {d.group: d.kind for d in self.project.dependencies}
-        groups = sorted(kinds)
+        groups: list[tuple[str, str]] = []
+        for dep in self.project.dependencies:
+            pair = (dep.group, dep.kind)
+            if dep.group not in ("main", "dev") and pair not in groups:
+                groups.append(pair)
 
-        def on_close(result: tuple[list[str], str] | None) -> None:
+        def on_close(result: tuple[list[str], str, str] | None) -> None:
             if result is not None:
-                packages, group = result
-                if group in ("main", "dev"):
-                    kind = group
-                else:
-                    kind = kinds.get(group, "group")
+                packages, group, kind = result
                 self._run_uv(commands.build_add(packages, group, kind))
 
         self.push_screen(AddDependencyScreen(groups), on_close)

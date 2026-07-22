@@ -59,11 +59,13 @@ def load_project(root: Path) -> LoadResult:
     return LoadResult(status=LoadStatus.OK, project=project)
 
 
-def _read_lock(lock_path: Path) -> dict[str, tuple[str, str]]:
-    """Return {canonical_name: (version, source_label)} from uv.lock.
+def _read_lock(lock_path: Path) -> dict[str, list[tuple[str, str]]]:
+    """Return {canonical_name: [(version, source_label), ...]} from uv.lock.
 
-    Returns an empty mapping if the lock is missing or unreadable — the UI
-    still shows declared deps, just without resolved versions.
+    Every `[[package]]` entry is kept, in lock-file order, so universal-lock forks
+    (multiple entries for one name) are preserved rather than collapsed. Returns an
+    empty mapping if the lock is missing or unreadable — the UI still shows declared
+    deps, just without resolved versions.
     """
     if not lock_path.is_file():
         return {}
@@ -73,7 +75,7 @@ def _read_lock(lock_path: Path) -> dict[str, tuple[str, str]]:
     except (tomllib.TOMLDecodeError, OSError):
         return {}
 
-    resolved: dict[str, tuple[str, str]] = {}
+    resolved: dict[str, list[tuple[str, str]]] = {}
     for package in lock.get("package", []):
         raw_name = package.get("name", "")
         if not raw_name:
@@ -86,19 +88,38 @@ def _read_lock(lock_path: Path) -> dict[str, tuple[str, str]]:
             if key in _SOURCE_LABELS:
                 label = _SOURCE_LABELS[key]
                 break
-        resolved[name] = (version, label)
+        resolved.setdefault(name, []).append((version, label))
     return resolved
 
 
+def _resolve_entries(
+    entries: list[tuple[str, str]],
+) -> tuple[str | None, str, tuple[str, ...]]:
+    """Reduce a name's lock entries to (primary_version, source, fork_versions).
+
+    Distinct versions are kept in lock order. A single distinct version is the
+    common (non-forked) case: `fork_versions` is empty. Two or more distinct
+    versions mean the package is forked — `fork_versions` lists them all and the
+    primary version is the first.
+    """
+    if not entries:
+        return None, "registry", ()
+    distinct = tuple(dict.fromkeys(version for version, _ in entries))
+    source = entries[0][1]
+    if len(distinct) > 1:
+        return distinct[0], source, distinct
+    return distinct[0], source, ()
+
+
 def _collect_dependencies(
-    pyproject: dict, resolved: dict[str, tuple[str, str]]
+    pyproject: dict, resolved: dict[str, list[tuple[str, str]]]
 ) -> list[Dependency]:
     project_table = pyproject.get("project", {})
     deps: list[Dependency] = []
 
     def add(requirement: str, group: str, kind: str) -> None:
         name, spec = split_requirement(requirement)
-        version, source = resolved.get(name, (None, "registry"))
+        version, source, fork_versions = _resolve_entries(resolved.get(name, []))
         deps.append(
             Dependency(
                 name=name,
@@ -107,6 +128,7 @@ def _collect_dependencies(
                 resolved_version=version,
                 source=source,
                 kind=kind,
+                fork_versions=fork_versions,
             )
         )
 

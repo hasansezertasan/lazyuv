@@ -163,3 +163,22 @@ async def test_selection_preserved_across_refresh():
         await pilot.pause()
         selected = app.query_one(DependenciesPanel).selected_dependency
         assert selected is not None and selected.name == "pytest"
+
+
+@pytest.mark.asyncio
+async def test_error_state_clears_stale_panels(tmp_path):
+    from lazyuv.widgets.scripts import ScriptsPanel
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project is not None
+        assert len(app.query_one(DependenciesPanel).root.children) > 0
+        # Project disappears (e.g. pyproject deleted) — panels must not go stale.
+        app.root = tmp_path
+        app.refresh_project()
+        await pilot.pause()
+        assert app.project is None
+        assert app.sub_title == ""
+        assert len(app.query_one(DependenciesPanel).root.children) == 0
+        assert len(app.query_one(ScriptsPanel).children) == 0

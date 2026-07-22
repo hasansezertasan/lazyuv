@@ -54,6 +54,7 @@ def load_project(root: Path) -> LoadResult:
         requires_python=project_table.get("requires-python", ""),
         dependencies=dependencies,
         scripts=scripts,
+        groups=_collect_groups(pyproject),
     )
     return LoadResult(status=LoadStatus.OK, project=project)
 
@@ -74,7 +75,10 @@ def _read_lock(lock_path: Path) -> dict[str, tuple[str, str]]:
 
     resolved: dict[str, tuple[str, str]] = {}
     for package in lock.get("package", []):
-        name = canonical_name(package.get("name", ""))
+        raw_name = package.get("name", "")
+        if not raw_name:
+            continue  # malformed lock entry — skip rather than key on ""
+        name = canonical_name(raw_name)
         version = package.get("version", "")
         source_dict = package.get("source", {})
         label = "other"
@@ -124,3 +128,18 @@ def _collect_dependencies(
             add(requirement, group_name, kind)
 
     return deps
+
+
+def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
+    """Return every declared (name, kind) group, including empty ones.
+
+    Derived from the TOML tables directly rather than from dependency leaves, so
+    a group with no dependencies yet is still offered as an add target.
+    """
+    project_table = pyproject.get("project", {})
+    groups: list[tuple[str, str]] = []
+    for name in project_table.get("optional-dependencies", {}):
+        groups.append((name, "extra"))
+    for name in pyproject.get("dependency-groups", {}):
+        groups.append((name, "dev" if name == "dev" else "group"))
+    return groups

@@ -44,14 +44,22 @@ and works even when `uv` is busy.
 Domain models:
 
 - `Dependency` — `name`, `spec` (version specifier from pyproject), `resolved_version`
-  (from uv.lock), `group` (`main` | `dev` | optional-group name), `source`
-  (e.g. `pypi (registry)`, `git`, `path`).
-- `Script` — `name`, `command`.
+  (from uv.lock), `group` (`main` | `dev` | optional-extra / dependency-group name),
+  `source` (`registry` | `git` | `path` | `url` | `other`), `kind`
+  (`main` | `dev` | `extra` | `group` — how uv targets it: `--optional` vs `--group`).
+- `Script` — `name`, `target` (the entry-point string).
 - `Project` — `name`, `version`, `requires_python`, `dependencies: list[Dependency]`,
-  `scripts: list[Script]`.
+  `scripts: list[Script]`, `groups: list[tuple[str, str]]` (declared `(name, kind)`
+  groups, including empty ones).
 
-`data.py` exposes a single `load_project(path: Path) -> Project` plus a way to signal
-the "not a uv project" and "malformed TOML" states without raising into the UI.
+`data.py` exposes a single `load_project(root: Path) -> LoadResult` — a wrapper
+carrying a `status` (`OK` / `NOT_A_PROJECT` / `MALFORMED`) and an optional `Project`,
+so the "not a uv project" and "malformed TOML" states are signaled without raising
+into the UI.
+
+> Note: `Dependency.kind`, `Project.groups`, and the `source`/`Script.target` shapes
+> above reflect refinements made during implementation and review; this section was
+> updated to match the shipped v1 code.
 
 ### Command layer (`commands.py`)
 

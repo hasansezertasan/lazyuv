@@ -12,27 +12,27 @@ from collections.abc import Callable
 from pathlib import Path
 
 
-def _group_flags(group: str, kind: str = "extra") -> list[str]:
+def _group_flags(group: str, kind: str) -> list[str]:
     """Map a dependency's (group, kind) to uv's target flags.
 
-    `main`/`dev` are recognized by name; any other group routes by kind —
-    `--group` for PEP 735 dependency groups, `--optional` for optional-dependency
-    extras.
+    Routing is by `kind`, never by name — an optional extra named "dev" must still
+    use `--optional dev`, not `--dev`. `--group` targets PEP 735 dependency groups,
+    `--optional` targets optional-dependency extras.
     """
-    if group == "main":
+    if kind == "main":
         return []
-    if group == "dev":
+    if kind == "dev":
         return ["--dev"]
     if kind == "group":
         return ["--group", group]
     return ["--optional", group]
 
 
-def build_add(packages: list[str], group: str = "main", kind: str = "extra") -> list[str]:
+def build_add(packages: list[str], group: str = "main", kind: str = "main") -> list[str]:
     return ["uv", "add", *_group_flags(group, kind), *packages]
 
 
-def build_remove(package: str, group: str = "main", kind: str = "extra") -> list[str]:
+def build_remove(package: str, group: str = "main", kind: str = "main") -> list[str]:
     return ["uv", "remove", *_group_flags(group, kind), package]
 
 
@@ -73,7 +73,7 @@ async def run_streaming(
     assert process.stdout is not None
     try:
         async for raw in process.stdout:
-            on_line(raw.decode(errors="replace").rstrip("\n"))
+            on_line(raw.decode(errors="replace").rstrip("\r\n"))
         return await process.wait()
     finally:
         if process.returncode is None:

@@ -88,3 +88,45 @@ def test_load_malformed(tmp_path):
     result = load_project(tmp_path)
     assert result.status is LoadStatus.MALFORMED
     assert result.error
+
+
+def test_load_collects_groups_including_empty(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[project.optional-dependencies]\n"
+        "cli = []\n\n"
+        "[dependency-groups]\n"
+        "docs = []\n"
+    )
+    proj = load_project(tmp_path).project
+    # Empty groups must still be discoverable as add targets.
+    assert ("cli", "extra") in proj.groups
+    assert ("docs", "group") in proj.groups
+
+
+def test_read_lock_skips_nameless_package(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["httpx>=0.1"]\n'
+    )
+    (tmp_path / "uv.lock").write_text(
+        "version = 1\n"
+        'requires-python = ">=3.14"\n\n'
+        "[[package]]\n"  # malformed: no name — must be skipped, not keyed on ""
+        'version = "9.9.9"\n\n'
+        "[[package]]\n"
+        'name = "httpx"\n'
+        'version = "0.28.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+    )
+    proj = load_project(tmp_path).project
+    by_name = {d.name: d for d in proj.dependencies}
+    assert by_name["httpx"].resolved_version == "0.28.1"
+    assert all(d.name for d in proj.dependencies)

@@ -25,31 +25,43 @@ def test_build_add_multiple_main():
 
 
 def test_build_add_dev():
-    assert build_add(["pytest"], group="dev") == [
+    assert build_add(["pytest"], group="dev", kind="dev") == [
         "uv", "add", "--dev", "pytest",
     ]
 
 
 def test_build_add_optional_group():
-    assert build_add(["typer"], group="cli") == [
+    assert build_add(["typer"], group="cli", kind="extra") == [
         "uv", "add", "--optional", "cli", "typer",
     ]
 
 
 def test_build_remove():
-    assert build_remove("httpx", group="main") == ["uv", "remove", "httpx"]
+    assert build_remove("httpx", group="main", kind="main") == ["uv", "remove", "httpx"]
 
 
 def test_build_remove_dev():
-    assert build_remove("pytest", group="dev") == [
+    assert build_remove("pytest", group="dev", kind="dev") == [
         "uv", "remove", "--dev", "pytest",
     ]
 
 
 def test_build_remove_optional():
-    assert build_remove("typer", group="cli") == [
+    assert build_remove("typer", group="cli", kind="extra") == [
         "uv", "remove", "--optional", "cli", "typer",
     ]
+
+
+def test_reserved_name_extra_routes_by_kind():
+    # An optional extra literally named "dev" must use --optional, not --dev.
+    assert build_add(["x"], group="dev", kind="extra") == [
+        "uv", "add", "--optional", "dev", "x",
+    ]
+    assert build_remove("x", group="main", kind="extra") == [
+        "uv", "remove", "--optional", "main", "x",
+    ]
+    # A dependency group named "dev" is genuinely the dev group -> --dev.
+    assert build_add(["x"], group="dev", kind="dev") == ["uv", "add", "--dev", "x"]
 
 
 def test_build_add_dependency_group():

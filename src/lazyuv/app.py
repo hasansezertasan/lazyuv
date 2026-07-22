@@ -67,11 +67,11 @@ class LazyUvApp(App[None]):
         result = load_project(self.root)
         details = self.query_one(DetailsPanel)
         if result.status is LoadStatus.NOT_A_PROJECT:
-            self.project = None
+            self._clear_project_panels()
             details.update("No pyproject.toml here.\nRun `uv init` to start a project.")
             return
         if result.status is LoadStatus.MALFORMED:
-            self.project = None
+            self._clear_project_panels()
             details.update(f"[red]pyproject.toml is malformed:[/red]\n{result.error}")
             return
 
@@ -87,6 +87,13 @@ class LazyUvApp(App[None]):
                 panel.restore_selection, previous.group, previous.name
             )
         self.query_one(ScriptsPanel).load(self.project.scripts)
+
+    def _clear_project_panels(self) -> None:
+        """Reset project-scoped views so a lost/invalid project shows no stale data."""
+        self.project = None
+        self.sub_title = ""
+        self.query_one(DependenciesPanel).set_filter(self._filter_text, [])
+        self.query_one(ScriptsPanel).load([])
 
     # --- selection wiring --------------------------------------------------
 
@@ -144,18 +151,13 @@ class LazyUvApp(App[None]):
     def action_add(self) -> None:
         if self.project is None:
             return
-        groups: list[tuple[str, str]] = []
-        for dep in self.project.dependencies:
-            pair = (dep.group, dep.kind)
-            if dep.group not in ("main", "dev") and pair not in groups:
-                groups.append(pair)
 
         def on_close(result: tuple[list[str], str, str] | None) -> None:
             if result is not None:
                 packages, group, kind = result
                 self._run_uv(commands.build_add(packages, group, kind))
 
-        self.push_screen(AddDependencyScreen(groups), on_close)
+        self.push_screen(AddDependencyScreen(self.project.groups), on_close)
 
     def action_remove(self) -> None:
         dep = self.query_one(DependenciesPanel).selected_dependency

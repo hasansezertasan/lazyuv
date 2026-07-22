@@ -6,9 +6,14 @@ leaving the terminal. In the spirit of `lazygit`.
 
 ## Install
 
+lazyuv is not on PyPI yet, so install it from a local checkout:
+
 ```bash
-uv tool install lazyuv
+git clone https://github.com/hasansezertasan/lazyuv
+uv tool install ./lazyuv
 ```
+
+Once published, this becomes `uv tool install lazyuv` (see `ROADMAP.md`).
 
 Requires Python 3.14+ (installed automatically in lazyuv's isolated tool
 environment) and `uv` on your PATH.

@@ -50,10 +50,23 @@ and the Textual UI (`app.py` + `widgets/` + `screens/`).
 
 ---
 
-## Milestone 2 — Environments & Python versions
+## Milestone 2 — Environments & Python versions — *shipped*
 
 **Intent:** manage the *environment* a project runs in, the natural next concern
 after its dependencies.
+
+*Implemented* (design:
+`docs/superpowers/specs/2026-07-22-environments-python-design.md`). An **Environment**
+panel shows the project's venv Python, `.venv` presence, and `.python-version` pin,
+read from files only (no subprocess), with a passive colored **drift** line when the
+venv Python misaligns with the pin / `requires-python`. A **Python picker** (`p`)
+lists interpreters from `uv python list` — via a new read-only `run_capture` seam —
+and installs / pins / uninstalls a selected version. **Scoped sync** (`S`) attaches
+`--extra`/`--group`/`--no-dev`/`--frozen` to `uv sync` (plain `s` unchanged), and `v`
+(re)creates the venv. Deferred (still non-goals): listing/switching arbitrary
+uv-managed Pythons (→ M3), full `requires-python` specifier evaluation (drift uses
+conservative leading `major.minor` comparison only), and active/blocking drift
+prompts.
 
 **Features:**
 - Python version management: `uv python list`, `uv python install <ver>`,

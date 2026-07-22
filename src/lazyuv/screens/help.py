@@ -14,8 +14,11 @@ _HELP = """[b]lazyuv keybindings[/b]
   a                add dependencies
   d                remove selected dependency
   s                sync
+  S                sync with options (extras / groups / flags)
   l                lock
   r                run selected script
+  p                manage Python versions
+  v                create / recreate the venv
   /                filter dependencies
   ?                toggle this help
   q                quit

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
@@ -36,8 +36,28 @@ def build_remove(package: str, group: str = "main", kind: str = "main") -> list[
     return ["uv", "remove", *_group_flags(group, kind), package]
 
 
-def build_sync() -> list[str]:
-    return ["uv", "sync"]
+def build_sync(
+    *,
+    extras: Sequence[str] = (),
+    groups: Sequence[str] = (),
+    no_dev: bool = False,
+    frozen: bool = False,
+) -> list[str]:
+    """Build `uv sync`, optionally scoped.
+
+    All arguments are keyword-only with empty/false defaults, so `build_sync()`
+    is exactly `["uv", "sync"]` (v1 behavior) and the scoping is purely additive.
+    """
+    argv = ["uv", "sync"]
+    for extra in extras:
+        argv += ["--extra", extra]
+    for group in groups:
+        argv += ["--group", group]
+    if no_dev:
+        argv.append("--no-dev")
+    if frozen:
+        argv.append("--frozen")
+    return argv
 
 
 def build_lock() -> list[str]:
@@ -46,6 +66,36 @@ def build_lock() -> list[str]:
 
 def build_run(script: str) -> list[str]:
     return ["uv", "run", script]
+
+
+def build_python_list() -> list[str]:
+    return ["uv", "python", "list", "--output-format", "json"]
+
+
+# `request` is a uv Python request — pass the row's fully-qualified `key`
+# (e.g. "cpython-3.14.6-macos-aarch64-none") so the action targets the exact
+# interpreter the user selected, not an ambiguous bare version.
+def build_python_install(request: str) -> list[str]:
+    return ["uv", "python", "install", request]
+
+
+def build_python_pin(request: str) -> list[str]:
+    return ["uv", "python", "pin", request]
+
+
+def build_python_uninstall(request: str) -> list[str]:
+    return ["uv", "python", "uninstall", request]
+
+
+def build_venv(python: str | None = None, clear: bool = False) -> list[str]:
+    """Build `uv venv`. `clear` adds `--clear` to replace an existing venv (uv
+    refuses to recreate over an existing `.venv` without it)."""
+    argv = ["uv", "venv"]
+    if clear:
+        argv.append("--clear")
+    if python:
+        argv += ["--python", python]
+    return argv
 
 
 def uv_available() -> bool:
@@ -75,6 +125,33 @@ async def run_streaming(
         async for raw in process.stdout:
             on_line(raw.decode(errors="replace").rstrip("\r\n"))
         return await process.wait()
+    finally:
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+
+
+async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
+    """Run `argv` to completion and return (exit_code, stdout).
+
+    The read-only counterpart to `run_streaming`: for queries like `uv python list`
+    whose whole stdout we parse at once (as JSON). Unlike `run_streaming`, stderr is
+    kept OUT of the returned output — a uv warning/progress line on stderr must not
+    corrupt the JSON. Like `run_streaming`, the child is terminated and awaited if
+    cancelled, so it is never orphaned.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        cwd=str(cwd) if cwd else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _stderr = await process.communicate()
+        return process.returncode or 0, stdout.decode(errors="replace")
     finally:
         if process.returncode is None:
             try:

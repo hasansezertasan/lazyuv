@@ -1,0 +1,84 @@
+"""Build uv command argv and run uv as a streaming subprocess.
+
+Argv builders are pure functions. `run_streaming` is the ONLY code in lazyuv
+that executes the real `uv` binary, which makes it a clean seam to mock in tests.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import shutil
+from collections.abc import Callable
+from pathlib import Path
+
+
+def _group_flags(group: str, kind: str) -> list[str]:
+    """Map a dependency's (group, kind) to uv's target flags.
+
+    Routing is by `kind`, never by name — an optional extra named "dev" must still
+    use `--optional dev`, not `--dev`. `--group` targets PEP 735 dependency groups,
+    `--optional` targets optional-dependency extras.
+    """
+    if kind == "main":
+        return []
+    if kind == "dev":
+        return ["--dev"]
+    if kind == "group":
+        return ["--group", group]
+    return ["--optional", group]
+
+
+def build_add(packages: list[str], group: str = "main", kind: str = "main") -> list[str]:
+    return ["uv", "add", *_group_flags(group, kind), *packages]
+
+
+def build_remove(package: str, group: str = "main", kind: str = "main") -> list[str]:
+    return ["uv", "remove", *_group_flags(group, kind), package]
+
+
+def build_sync() -> list[str]:
+    return ["uv", "sync"]
+
+
+def build_lock() -> list[str]:
+    return ["uv", "lock"]
+
+
+def build_run(script: str) -> list[str]:
+    return ["uv", "run", script]
+
+
+def uv_available() -> bool:
+    """True if the `uv` binary is on PATH."""
+    return shutil.which("uv") is not None
+
+
+async def run_streaming(
+    argv: list[str],
+    on_line: Callable[[str], None],
+    cwd: Path | None = None,
+) -> int:
+    """Run `argv`, invoking `on_line` for each combined stdout/stderr line.
+
+    Returns the process exit code. Lines are yielded without trailing newlines.
+    On cancellation (or any error mid-run) the child process is terminated and
+    awaited so it is never orphaned.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        cwd=str(cwd) if cwd else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    assert process.stdout is not None
+    try:
+        async for raw in process.stdout:
+            on_line(raw.decode(errors="replace").rstrip("\r\n"))
+        return await process.wait()
+    finally:
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            await process.wait()

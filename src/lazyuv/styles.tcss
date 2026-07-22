@@ -1,0 +1,42 @@
+Screen {
+    layers: base overlay;
+}
+
+#body {
+    layout: horizontal;
+}
+
+#left {
+    width: 40%;
+    layout: vertical;
+}
+
+#right {
+    width: 60%;
+    layout: vertical;
+}
+
+#dependencies, #details { height: 60%; }
+#scripts, #output { height: 40%; }
+
+DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel {
+    border: round $primary;
+    padding: 0 1;
+}
+
+#add-dialog, #confirm-dialog, #help-dialog {
+    background: $panel;
+    border: thick $primary;
+    padding: 1 2;
+    width: 60;
+    height: auto;
+    align: center middle;
+}
+
+#filter-dialog {
+    background: $panel;
+    border: thick $primary;
+    padding: 1 2;
+    width: 60;
+    height: auto;
+}

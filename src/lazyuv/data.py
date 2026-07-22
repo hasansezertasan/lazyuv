@@ -179,6 +179,11 @@ def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
 # e.g. ">=3.14", "==3.12", "~=3.11". Anything more complex is treated as unknown.
 _REQUIRES_RE = re.compile(r"^\s*(>=|==|~=)\s*(\d+)\.(\d+)")
 
+# A plain dotted version like "3", "3.14", "3.14.2". Pins that aren't plain
+# versions (e.g. "pypy@3.10" or a full uv key) can't be compared to a bare venv
+# version, so drift treats them as unknown rather than guessing.
+_PLAIN_VERSION_RE = re.compile(r"^\d+(\.\d+)*$")
+
 
 def _read_pin(root: Path) -> str | None:
     """Return the pinned Python from `.python-version`, or None.
@@ -217,14 +222,18 @@ def _read_venv(cfg_path: Path) -> tuple[str | None, str | None]:
     return version or None, values.get("home") or None
 
 
-def _version_prefix_matches(version: str, prefix: str) -> bool:
-    """True when `version`'s leading components equal every component of `prefix`.
+def _version_matches(version: str, prefix: str) -> bool:
+    """True when `version` and `prefix` agree on their shared leading components.
 
-    Component-wise (not string startswith), so pin "3.1" does NOT match "3.14.0".
+    Component-wise over `min(len)` parts, so a major.minor venv (uv writes only
+    `version_info = 3.14`) does NOT falsely mismatch a patch-level pin like "3.14.2":
+    we compare "3.14" vs "3.14" and can't confirm the patch, so we don't flag drift.
+    Conversely "3.1" still mismatches "3.14.x" (component "1" ≠ "14").
     """
     got = version.split(".")
     want = prefix.split(".")
-    return len(got) >= len(want) and got[: len(want)] == want
+    n = min(len(got), len(want))
+    return n > 0 and got[:n] == want[:n]
 
 
 def _compute_drift(
@@ -232,15 +241,21 @@ def _compute_drift(
 ) -> str | None:
     """Describe how the venv Python misaligns with the pin / requires-python.
 
-    Conservative by design: a pin drives an exact component-prefix check; without
-    a pin, only a bare `>=`/`==`/`~=` major.minor requires-python is compared
-    (leading major.minor). Anything ambiguous returns None — never a false alarm.
+    Conservative by design — never a false alarm; ambiguous cases return None:
+    - A plain-version pin drives a shared-leading-component comparison. A pin that
+      isn't a plain version (e.g. "pypy@3.10" or a full uv key) is uncomparable → None.
+    - Without a pin, only a single bare `>=`/`==`/`~=` major.minor requires-python is
+      compared. Compound specifiers (e.g. ">=3.9,<3.11") are unknown → None.
     """
     if not venv_python:
         return None
     if pinned:
-        if not _version_prefix_matches(venv_python, pinned):
+        if not _PLAIN_VERSION_RE.match(pinned):
+            return None
+        if not _version_matches(venv_python, pinned):
             return f"venv Python {venv_python} ≠ pinned {pinned}"
+        return None
+    if "," in requires_python:
         return None
     match = _REQUIRES_RE.match(requires_python)
     if not match:
@@ -249,7 +264,7 @@ def _compute_drift(
     parts = venv_python.split(".")
     try:
         got = (int(parts[0]), int(parts[1]))
-    except IndexError, ValueError:
+    except (IndexError, ValueError):
         return None
     want = (major, minor)
     if op in (">=", "~=") and got < want:
@@ -274,15 +289,23 @@ def _read_environment(root: Path, requires_python: str) -> Environment:
     )
 
 
+# uv-managed interpreters live under uv's data dir (…/uv/python/…); interpreters
+# merely discovered on PATH (homebrew, /usr/bin, …) do not. `uv python uninstall`
+# only removes managed ones, so the picker gates uninstall on this.
+_MANAGED_PATH_MARKER = "/uv/python/"
+
+
 def parse_python_list(output: str) -> list[PythonVersion]:
     """Parse `uv python list --output-format json` into PythonVersion rows.
 
-    A version is "installed" when uv reports a local `path` for it. Malformed or
-    empty output → empty list (the picker just shows nothing to install/pin).
+    Preserves uv's `key` (the unambiguous request id) so same-`version` rows across
+    implementations/variants stay distinct. A row is "installed" when uv reports a
+    `path`, and "managed" when that path is under uv's managed-Python dir. Malformed
+    or empty output → empty list.
     """
     try:
         entries = json.loads(output)
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         return []
     if not isinstance(entries, list):
         return []
@@ -291,10 +314,20 @@ def parse_python_list(output: str) -> list[PythonVersion]:
         if not isinstance(entry, dict):
             continue
         version = entry.get("version")
-        if not version:
+        key = entry.get("key")
+        if not version or not key:
             continue
         path = entry.get("path")
+        installed = path is not None
+        managed = installed and _MANAGED_PATH_MARKER in str(path).replace("\\", "/")
         versions.append(
-            PythonVersion(version=version, installed=path is not None, path=path)
+            PythonVersion(
+                key=key,
+                version=version,
+                implementation=entry.get("implementation") or "cpython",
+                installed=installed,
+                managed=managed,
+                path=path,
+            )
         )
     return versions

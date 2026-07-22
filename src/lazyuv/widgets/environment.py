@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.widgets import Static
 
 from lazyuv.models import Environment
@@ -9,6 +10,11 @@ from lazyuv.models import Environment
 
 class EnvironmentPanel(Static):
     BORDER_TITLE = "Environment"
+
+    def __init__(self) -> None:
+        # Explicit id so styles.tcss's #environment rule (min-height) applies, as
+        # every other panel does (DependenciesPanel, ScriptsPanel, OutputPanel).
+        super().__init__(id="environment")
 
     def show(self, env: Environment | None) -> None:
         """Render the project's Python/venv state, or a hint when there is none."""
@@ -21,12 +27,14 @@ class EnvironmentPanel(Static):
                 "No venv or pin.\nPress v to create a venv, p to manage Python."
             )
             return
-        python = env.venv_python or "(no venv)"
+        # Values come from disk (paths, versions) — escape so a stray "[" can't be
+        # reinterpreted as Rich markup.
+        python = escape(env.venv_python) if env.venv_python else "(no venv)"
         lines = [
             f"[b]Python[/b]  {python}",
-            f"venv:   {env.venv_path or '—'}",
-            f"pin:    {env.pinned_python or '—'}",
+            f"venv:   {escape(env.venv_path) if env.venv_path else '—'}",
+            f"pin:    {escape(env.pinned_python) if env.pinned_python else '—'}",
         ]
         if env.drift:
-            lines.append(f"[red]drift:  {env.drift}[/red]")
+            lines.append(f"[red]drift:  {escape(env.drift)}[/red]")
         self.update("\n".join(lines))

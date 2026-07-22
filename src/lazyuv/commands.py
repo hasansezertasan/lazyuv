@@ -72,20 +72,30 @@ def build_python_list() -> list[str]:
     return ["uv", "python", "list", "--output-format", "json"]
 
 
-def build_python_install(version: str) -> list[str]:
-    return ["uv", "python", "install", version]
+# `request` is a uv Python request — pass the row's fully-qualified `key`
+# (e.g. "cpython-3.14.6-macos-aarch64-none") so the action targets the exact
+# interpreter the user selected, not an ambiguous bare version.
+def build_python_install(request: str) -> list[str]:
+    return ["uv", "python", "install", request]
 
 
-def build_python_pin(version: str) -> list[str]:
-    return ["uv", "python", "pin", version]
+def build_python_pin(request: str) -> list[str]:
+    return ["uv", "python", "pin", request]
 
 
-def build_python_uninstall(version: str) -> list[str]:
-    return ["uv", "python", "uninstall", version]
+def build_python_uninstall(request: str) -> list[str]:
+    return ["uv", "python", "uninstall", request]
 
 
-def build_venv(python: str | None = None) -> list[str]:
-    return ["uv", "venv", *(["--python", python] if python else [])]
+def build_venv(python: str | None = None, clear: bool = False) -> list[str]:
+    """Build `uv venv`. `clear` adds `--clear` to replace an existing venv (uv
+    refuses to recreate over an existing `.venv` without it)."""
+    argv = ["uv", "venv"]
+    if clear:
+        argv.append("--clear")
+    if python:
+        argv += ["--python", python]
+    return argv
 
 
 def uv_available() -> bool:
@@ -125,21 +135,22 @@ async def run_streaming(
 
 
 async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
-    """Run `argv` to completion and return (exit_code, combined_output).
+    """Run `argv` to completion and return (exit_code, stdout).
 
-    The read-only counterpart to `run_streaming`: for queries like
-    `uv python list` whose whole output we parse at once rather than stream.
-    Like `run_streaming`, the child is terminated and awaited if cancelled, so
-    it is never orphaned.
+    The read-only counterpart to `run_streaming`: for queries like `uv python list`
+    whose whole stdout we parse at once (as JSON). Unlike `run_streaming`, stderr is
+    kept OUT of the returned output — a uv warning/progress line on stderr must not
+    corrupt the JSON. Like `run_streaming`, the child is terminated and awaited if
+    cancelled, so it is never orphaned.
     """
     process = await asyncio.create_subprocess_exec(
         *argv,
         cwd=str(cwd) if cwd else None,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _ = await process.communicate()
+        stdout, _stderr = await process.communicate()
         return process.returncode or 0, stdout.decode(errors="replace")
     finally:
         if process.returncode is None:

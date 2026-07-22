@@ -62,13 +62,16 @@ Drift is computed, not stored: the venv Python version vs. the pin (if any) and 
 version-range evaluation (that would need `packaging`, breaking the single-dependency
 constraint, exactly as the fork spec established). Concretely:
 
-- Pin present: the venv version's leading components must equal every component of
-  the pin (component-wise, not string `startswith`, so pin `3.1` does **not** match
-  `3.14.0`). Mismatch → drift; the pin alone drives the check.
-- No pin: only a bare leading `>=`/`==`/`~=` `major.minor` in `requires-python` is
-  compared, against the venv's leading `major.minor` — below a `>=`/`~=` floor, or
-  unequal to an `==`, is drift. Anything more complex (`>=3.11,<4.0`, unparsable) is
-  "unknown", never "drift" (no false alarm). Non-goal: full specifier satisfaction.
+- Pin present: compare the venv version and the pin over their **shared leading
+  components** (`min(len)`), so a major.minor venv (uv writes only
+  `version_info = 3.14`) does not falsely mismatch a patch-level pin like `3.14.2`,
+  while `3.1` still mismatches `3.14.x`. A pin that isn't a plain version (e.g.
+  `pypy@3.10` or a full uv key) is uncomparable → "unknown". The pin drives the check.
+- No pin: only a **single** bare `>=`/`==`/`~=` `major.minor` in `requires-python` is
+  compared against the venv's leading `major.minor` — below a `>=`/`~=` floor, or
+  unequal to an `==`, is drift. A compound specifier (`>=3.9,<3.11`) or anything
+  unparsable is "unknown", never "drift" (no false alarm). Non-goal: full specifier
+  satisfaction.
 
 ## Model (`models.py`)
 
@@ -78,7 +81,7 @@ Add a plain dataclass (no behavior, like the rest of `models.py`):
 @dataclass(frozen=True, slots=True)
 class Environment:
     venv_path: str | None          # ".venv" if present, else None
-    venv_python: str | None        # version from pyvenv.cfg, e.g. "3.14.0"
+    venv_python: str | None        # version from pyvenv.cfg (uv writes major.minor, e.g. "3.14")
     pinned_python: str | None      # from .python-version, e.g. "3.14"
     drift: str | None              # human-readable drift note, None if aligned/unknown
 ```
@@ -94,8 +97,9 @@ project). Additive and default-valued, so nothing in v1 breaks (same approach as
   from `pyvenv.cfg`; missing/malformed → `(None, None)`.
 - `_compute_drift(venv_python, pinned, requires_python) -> str | None` — the
   conservative comparison above.
-- `_read_environment(root) -> Environment` — composes the three; `load_project`
-  attaches it to `Project`. `NOT_A_PROJECT` / `MALFORMED` paths are unchanged.
+- `_read_environment(root, requires_python) -> Environment` — composes the three
+  (`requires_python` is needed for drift); `load_project` attaches it to `Project`.
+  `NOT_A_PROJECT` / `MALFORMED` paths are unchanged.
 
 ## Commands (`commands.py`)
 
@@ -103,27 +107,35 @@ Pure argv builders (unchanged style), plus the new capture seam:
 
 ```
 def build_python_list() -> list[str]:          # ["uv", "python", "list", "--output-format", "json"]
-def build_python_install(version: str)         # ["uv", "python", "install", version]
-def build_python_pin(version: str)             # ["uv", "python", "pin", version]
-def build_python_uninstall(version: str)       # ["uv", "python", "uninstall", version]
-def build_venv(python: str | None = None)      # ["uv", "venv", *(["--python", python] if python else [])]
+def build_python_install(request: str)         # ["uv", "python", "install", request]
+def build_python_pin(request: str)             # ["uv", "python", "pin", request]
+def build_python_uninstall(request: str)       # ["uv", "python", "uninstall", request]
+def build_venv(python=None, clear=False)       # ["uv", "venv", ("--clear"?), ("--python", python)?]
 def build_sync(*, extras=(), groups=(), no_dev=False, frozen=False) -> list[str]
     # ["uv", "sync", *(--extra X ...), *(--group G ...), *(["--no-dev"] if no_dev), *(["--frozen"] if frozen)]
 ```
 
-`build_sync()` stays backward-compatible: no args → `["uv", "sync"]` exactly as v1.
+`build_python_*` take a uv *request* string — the picker passes each row's fully
+qualified `key`, not a bare version, so the action targets the exact interpreter
+(implementations/variants can share a version number). `build_venv(clear=True)` is
+required to recreate over an existing `.venv` (uv refuses otherwise). `build_sync()`
+stays backward-compatible: no args → `["uv", "sync"]` exactly as v1.
 
 ```
 async def run_capture(argv, cwd=None) -> tuple[int, str]:
-    """Run argv to completion, return (exit_code, combined_output). Read-only queries.
-    Terminates/awaits the child on cancellation, like run_streaming."""
+    """Run argv to completion, return (exit_code, stdout). Read-only queries.
+    stderr is captured separately (kept out of stdout) so a uv warning can't corrupt
+    the JSON. Terminates/awaits the child on cancellation, like run_streaming."""
 ```
 
-Parsing of `uv python list --output-format json` (installed vs. downloadable,
-version, path) lives next to the read path, not in `commands.py` (which stays pure
-argv + the two subprocess seams). Actions (install/pin/uninstall/venv/scoped-sync)
-still route through `run_streaming` for live output and the existing `_busy`/worker
-flow in `app.py`.
+Parsing of `uv python list --output-format json` lives next to the read path
+(`parse_python_list`), preserving each entry's `key` (unambiguous request id),
+`implementation`, `installed` (has a path), and `managed` (path under uv's
+`…/uv/python/…` dir — only managed installs are uninstallable). It stays out of
+`commands.py` (which is pure argv + the two subprocess seams). Actions
+(install/pin/uninstall/venv/scoped-sync) route through `run_streaming` and the
+`_busy`/worker flow in `app.py`; the picker's own `run_capture` query is guarded by
+`_busy` too, so it can't be cancelled by — or race with — a mutation.
 
 ## UI
 
@@ -132,13 +144,14 @@ flow in `app.py`.
   active Python (venv version, or "no venv"), venv path, pinned version, and the
   drift line in red when present (passive; no prompt). Reads from
   `Project.environment` in `refresh_project`, alongside the existing panel loads.
-- **Python picker modal** (`screens/python.py`, a `ModalScreen`) — opened by a new
-  binding (proposed `p`, "python"). On open it calls `run_capture(build_python_list())`
-  via a worker, parses the JSON, and lists versions (installed marked, others
-  installable). Actions from the modal: install selected, pin selected, uninstall
-  selected — each dismisses with an intent the app turns into a `run_streaming`
-  command, matching how `AddDependencyScreen` returns a `(packages, group, kind)`
-  tuple for the app to execute.
+- **Python picker modal** (`screens/python.py`, a `ModalScreen`) — opened by `p`. The
+  app reads `run_capture(build_python_list())` in a worker (wrapped so a `uv` failure
+  surfaces on the OutputPanel rather than crashing the app), parses the JSON, and
+  hands the list to the modal. Rows show version + implementation + status
+  (managed/installed/available). Actions dismiss with `(action, key)`; the app turns
+  that into a `run_streaming` command (matching `AddDependencyScreen`'s intent-tuple
+  pattern). Actions are gated: Install only when not installed, Uninstall only for a
+  uv-managed row.
 - **Scoped sync** — new binding (proposed `S`, "sync options") opens a small modal
   to choose extras/groups (from `Project.groups`, reusing the add-modal's kind-aware
   option list) and toggle `--no-dev` / `--frozen`; it returns the selections and the

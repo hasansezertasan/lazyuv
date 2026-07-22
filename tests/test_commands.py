@@ -125,6 +125,14 @@ def test_build_venv():
     assert build_venv("3.14") == ["uv", "venv", "--python", "3.14"]
 
 
+def test_build_venv_clear():
+    # Recreating over an existing venv needs --clear (uv errors otherwise).
+    assert build_venv(clear=True) == ["uv", "venv", "--clear"]
+    assert build_venv("3.14", clear=True) == [
+        "uv", "venv", "--clear", "--python", "3.14",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_run_capture_returns_exit_code_and_output():
     argv = [sys.executable, "-c", "print('hello'); print('world')"]
@@ -139,6 +147,29 @@ async def test_run_capture_nonzero_exit():
     exit_code, output = await run_capture(argv)
     assert exit_code == 2
     assert "x" in output
+
+
+@pytest.mark.asyncio
+async def test_run_capture_excludes_stderr():
+    # stderr must not be folded into the returned output (it would corrupt JSON).
+    argv = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stderr.write('WARN'); sys.stdout.write('DATA')",
+    ]
+    _exit_code, output = await run_capture(argv)
+    assert output == "DATA"
+    assert "WARN" not in output
+
+
+@pytest.mark.asyncio
+async def test_run_capture_reaps_on_cancel():
+    argv = [sys.executable, "-c", "import time; time.sleep(30)"]
+    task = asyncio.create_task(run_capture(argv))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 @pytest.mark.asyncio

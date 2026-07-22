@@ -182,6 +182,9 @@ class LazyUvApp(App[None]):
     def action_sync_options(self) -> None:
         if self.project is None:
             return
+        if self._busy:
+            self.bell()
+            return
 
         def on_close(result: tuple[list[str], list[str], bool, bool] | None) -> None:
             if result is None:
@@ -200,18 +203,36 @@ class LazyUvApp(App[None]):
         if self._busy:
             self.bell()
             return
+        # Mark busy for the whole picker lifecycle: this both serializes against
+        # mutations (so a concurrent `uv sync` can't cancel this worker or silently
+        # swallow the picked action) and prevents a second `p` from stacking modals.
+        self._busy = True
         self.run_worker(self._open_python_picker())
 
     async def _open_python_picker(self) -> None:
-        exit_code, output = await commands.run_capture(
-            commands.build_python_list(), cwd=self.root
-        )
-        versions = parse_python_list(output) if exit_code == 0 else []
+        output = self.query_one(OutputPanel)
+        try:
+            exit_code, out = await commands.run_capture(
+                commands.build_python_list(), cwd=self.root
+            )
+        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+            output.line(f"error: {exc}")
+            output.finish(1)
+            self._busy = False
+            return
+        if exit_code != 0:
+            output.line(f"`uv python list` failed (exit {exit_code})")
+            output.finish(exit_code)
+            self._busy = False
+            return
+
+        versions = parse_python_list(out)
 
         def on_close(result: tuple[str, str] | None) -> None:
+            self._busy = False  # release before dispatching so _run_uv can run
             if result is None:
                 return
-            action, version = result
+            action, request = result
             builders = {
                 "install": commands.build_python_install,
                 "pin": commands.build_python_pin,
@@ -219,21 +240,26 @@ class LazyUvApp(App[None]):
             }
             builder = builders.get(action)
             if builder is not None:
-                self._run_uv(builder(version))
+                self._run_uv(builder(request))
 
         self.push_screen(PythonPickerScreen(versions), on_close)
 
     def action_venv(self) -> None:
         if self.project is None:
             return
+        if self._busy:
+            self.bell()
+            return
         env = self.project.environment
         pin = env.pinned_python if env else None
+        exists = env is not None and env.venv_path is not None
 
         def recreate(confirmed: bool) -> None:
             if confirmed:
-                self._run_uv(commands.build_venv(pin))
+                # `--clear` when a venv exists: uv refuses to recreate over it otherwise.
+                self._run_uv(commands.build_venv(pin, clear=exists))
 
-        if env is not None and env.venv_path is not None:
+        if exists:
             self.push_screen(
                 ConfirmScreen("Recreate .venv? The existing venv is replaced."),
                 recreate,

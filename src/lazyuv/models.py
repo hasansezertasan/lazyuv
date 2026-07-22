@@ -53,11 +53,19 @@ class Environment:
 
 @dataclass(frozen=True, slots=True)
 class PythonVersion:
-    """A Python interpreter reported by `uv python list`."""
+    """A Python interpreter reported by `uv python list`.
 
-    version: str  # e.g. "3.14.0"
-    installed: bool  # True when uv reports a local path for it
-    path: str | None = None  # interpreter path when installed, else None
+    `key` is uv's fully-qualified request id (e.g. "cpython-3.14.6-macos-aarch64-none")
+    — unambiguous across implementation/variant, unlike `version` alone, which can
+    repeat across CPython/PyPy/free-threaded builds. Actions use `key`, never `version`.
+    """
+
+    key: str                  # uv request id, e.g. "cpython-3.14.6-macos-aarch64-none"
+    version: str              # e.g. "3.14.6"
+    implementation: str       # "cpython", "pypy", ...
+    installed: bool           # True when uv reports a local path for it
+    managed: bool             # True when uv manages this install (safe to uninstall)
+    path: str | None = None   # interpreter path when installed, else None
 
 
 @dataclass(slots=True)

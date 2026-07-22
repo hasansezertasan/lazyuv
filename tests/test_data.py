@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from lazyuv.data import (
@@ -265,9 +266,33 @@ def test_compute_drift_requires_python_floor_satisfied():
     assert _compute_drift("3.14.0", None, ">=3.14") is None
 
 
+def test_compute_drift_requires_python_exact_and_compatible():
+    # No-pin `==` and `~=` branches (venv major.minor from uv is "3.14").
+    assert _compute_drift("3.14", None, "==3.12") is not None  # exact mismatch -> drift
+    assert _compute_drift("3.14", None, "==3.14") is None      # exact match -> no drift
+    assert _compute_drift("3.10", None, "~=3.14") is not None  # below compat floor
+
+
 def test_compute_drift_complex_requires_python_is_unknown():
-    # A specifier we can't safely parse must never raise a false drift alarm.
+    # A compound specifier must be treated as unknown, never compared on its first
+    # clause (">=3.9,<3.11" with a 3.14 venv would else wrongly read as satisfied).
     assert _compute_drift("3.12.0", None, ">=3.11,<4.0") is None
+    assert _compute_drift("3.14.0", None, ">=3.9,<3.11") is None
+
+
+def test_compute_drift_patch_pin_no_false_alarm():
+    # uv writes major.minor only into pyvenv.cfg ("3.14"); a patch-level pin must
+    # NOT be reported as drift just because the patch can't be confirmed.
+    assert _compute_drift("3.14", "3.14.2", "") is None
+    # but a real major.minor mismatch against a patch pin still drifts
+    assert _compute_drift("3.12", "3.14.2", "") is not None
+
+
+def test_compute_drift_non_version_pin_is_unknown():
+    # Implementation-qualified pins / full uv keys can't be compared to a bare
+    # venv version -> unknown, not a bogus "≠ pinned" message.
+    assert _compute_drift("3.14.0", "pypy@3.10", "") is None
+    assert _compute_drift("3.14.0", "cpython-3.14.6-macos-aarch64-none", "") is None
 
 
 def test_read_environment_composes(tmp_path):
@@ -285,16 +310,51 @@ def test_load_project_attaches_environment():
     assert proj.environment is not None
 
 
-def test_parse_python_list_installed_and_available():
-    output = (
-        '[{"version": "3.14.0", "path": "/opt/py/3.14/bin/python"},'
-        ' {"version": "3.12.5", "path": null}]'
+def test_parse_python_list_managed_system_and_available():
+    output = json.dumps(
+        [
+            {
+                "key": "cpython-3.14.6-macos-aarch64-none",
+                "version": "3.14.6",
+                "implementation": "cpython",
+                "path": "/Users/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
+            },
+            {
+                "key": "cpython-3.12.13-macos-aarch64-none",
+                "version": "3.12.13",
+                "implementation": "cpython",
+                "path": "/opt/homebrew/bin/python3.12",
+            },
+            {
+                "key": "pypy-3.10.14-macos-aarch64-none",
+                "version": "3.10.14",
+                "implementation": "pypy",
+                "path": None,
+            },
+        ]
     )
     versions = parse_python_list(output)
-    assert versions == [
-        PythonVersion(version="3.14.0", installed=True, path="/opt/py/3.14/bin/python"),
-        PythonVersion(version="3.12.5", installed=False, path=None),
-    ]
+    # uv-managed install: installed + managed (uninstallable)
+    assert versions[0] == PythonVersion(
+        key="cpython-3.14.6-macos-aarch64-none",
+        version="3.14.6",
+        implementation="cpython",
+        installed=True,
+        managed=True,
+        path="/Users/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
+    )
+    # homebrew system interpreter: installed but NOT managed (not uninstallable)
+    assert versions[1].installed is True
+    assert versions[1].managed is False
+    # downloadable: not installed, and preserves implementation to disambiguate
+    assert versions[2].installed is False
+    assert versions[2].implementation == "pypy"
+
+
+def test_parse_python_list_skips_entries_without_key():
+    # A row missing uv's `key` can't be acted on unambiguously -> skip it.
+    output = json.dumps([{"version": "3.14.0", "path": None}])
+    assert parse_python_list(output) == []
 
 
 def test_parse_python_list_malformed_is_empty():

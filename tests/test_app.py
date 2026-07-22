@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from lazyuv.app import LazyUvApp
+from lazyuv.screens.python import PythonPickerScreen
 from lazyuv.widgets.dependencies import DependenciesPanel
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
@@ -294,23 +296,48 @@ async def test_sync_options_frozen_builds_argv(monkeypatch):
         assert captured["argv"] == ["uv", "sync", "--frozen"]
 
 
+_PYTHON_LIST_JSON = json.dumps(
+    [
+        {
+            "key": "cpython-3.14.6-macos-aarch64-none",
+            "version": "3.14.6",
+            "implementation": "cpython",
+            "path": "/home/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
+        },
+        {
+            "key": "cpython-3.12.5-macos-aarch64-none",
+            "version": "3.12.5",
+            "implementation": "cpython",
+            "path": None,
+        },
+        {
+            "key": "cpython-3.11.14-macos-aarch64-none",
+            "version": "3.11.14",
+            "implementation": "cpython",
+            "path": "/opt/homebrew/bin/python3.11",
+        },
+    ]
+)
+
+
+def _fake_capture(_output):
+    async def fake_run_capture(argv, cwd=None):
+        return 0, _output
+
+    return fake_run_capture
+
+
 @pytest.mark.asyncio
-async def test_python_picker_install_builds_argv(monkeypatch):
+async def test_python_picker_install_uses_key(monkeypatch):
     from textual.widgets import ListView
 
     captured = {}
-
-    async def fake_run_capture(argv, cwd=None):
-        return 0, (
-            '[{"version": "3.14.0", "path": "/opt/py/bin/python"},'
-            ' {"version": "3.12.5", "path": null}]'
-        )
 
     async def fake_run_streaming(argv, on_line, cwd=None):
         captured["argv"] = argv
         return 0
 
-    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    monkeypatch.setattr("lazyuv.commands.run_capture", _fake_capture(_PYTHON_LIST_JSON))
     monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
 
     app = LazyUvApp(root=FIXTURE)
@@ -319,17 +346,101 @@ async def test_python_picker_install_builds_argv(monkeypatch):
         await pilot.press("p")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        # pick the second (available) version and install it
+        # second row is the available (not-installed) 3.12.5 -> install by its key
         app.screen.query_one("#python-list", ListView).index = 1
         await pilot.pause()
         await pilot.click("#install")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert captured["argv"] == ["uv", "python", "install", "3.12.5"]
+        assert captured["argv"] == [
+            "uv", "python", "install", "cpython-3.12.5-macos-aarch64-none",
+        ]
 
 
 @pytest.mark.asyncio
-async def test_recreate_venv_confirm_builds_argv(monkeypatch, tmp_path):
+async def test_python_picker_uninstall_gated_to_managed(monkeypatch):
+    """Uninstall on a non-managed (system) interpreter must not dispatch a command."""
+    from textual.widgets import ListView
+
+    captured = {"called": False}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["called"] = True
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", _fake_capture(_PYTHON_LIST_JSON))
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # third row is the homebrew (system, non-managed) interpreter
+        app.screen.query_one("#python-list", ListView).index = 2
+        await pilot.pause()
+        await pilot.click("#uninstall")
+        await pilot.pause()
+        # bell + modal stays open; no uv command dispatched
+        assert captured["called"] is False
+        assert isinstance(app.screen, PythonPickerScreen)
+
+
+@pytest.mark.asyncio
+async def test_python_picker_empty_list_cancels_cleanly(monkeypatch):
+    monkeypatch.setattr("lazyuv.commands.run_capture", _fake_capture("[]"))
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, PythonPickerScreen)
+        await pilot.click("#install")  # nothing selected -> dismiss(None)
+        await pilot.pause()
+        assert not isinstance(app.screen, PythonPickerScreen)
+        assert app._busy is False  # busy released even on empty/cancel
+
+
+@pytest.mark.asyncio
+async def test_python_picker_list_failure_no_crash(monkeypatch):
+    """A nonzero `uv python list` must not open a picker or crash the app."""
+
+    async def fake_run_capture(argv, cwd=None):
+        return 1, ""
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not isinstance(app.screen, PythonPickerScreen)
+        assert app._busy is False  # not wedged busy
+
+
+@pytest.mark.asyncio
+async def test_python_picker_capture_exception_no_crash(monkeypatch):
+    """An exception from run_capture (e.g. uv missing) is contained, not fatal."""
+
+    async def boom(argv, cwd=None):
+        raise OSError("uv not found")
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", boom)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("p")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.project is not None  # app still alive
+        assert app._busy is False
+
+
+@pytest.mark.asyncio
+async def test_recreate_existing_venv_uses_clear(monkeypatch, tmp_path):
     captured = {}
 
     async def fake_run_streaming(argv, on_line, cwd=None):
@@ -340,7 +451,7 @@ async def test_recreate_venv_confirm_builds_argv(monkeypatch, tmp_path):
 
     _write_project(tmp_path)
     (tmp_path / ".python-version").write_text("3.14\n")
-    _write_venv(tmp_path, "3.14.0")
+    _write_venv(tmp_path, "3.14")
 
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -350,4 +461,73 @@ async def test_recreate_venv_confirm_builds_argv(monkeypatch, tmp_path):
         await pilot.click("#yes")  # confirm recreate
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert captured["argv"] == ["uv", "venv", "--python", "3.14"]
+        # existing venv -> must pass --clear (uv errors otherwise)
+        assert captured["argv"] == ["uv", "venv", "--clear", "--python", "3.14"]
+
+
+@pytest.mark.asyncio
+async def test_create_venv_when_absent_no_confirm_no_clear(monkeypatch, tmp_path):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_project(tmp_path)  # no .venv, no pin
+
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("v")  # no venv -> creates directly, no confirm screen
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "venv"]
+
+
+@pytest.mark.asyncio
+async def test_sync_options_selects_extra(monkeypatch):
+    from textual.widgets import SelectionList
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    # fixture has extra "cli" and dev group (dev is excluded from the group list)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("S")
+        await pilot.pause()
+        app.screen.query_one("#extras", SelectionList).select_all()
+        await pilot.pause()
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "sync", "--extra", "cli"]
+
+
+@pytest.mark.asyncio
+async def test_environment_panel_empty_state(tmp_path):
+    from lazyuv.widgets.environment import EnvironmentPanel
+
+    _write_project(tmp_path)  # no .venv, no .python-version
+
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        rendered = str(app.query_one(EnvironmentPanel).render())
+        assert "No venv or pin" in rendered
+
+
+def test_help_overlay_lists_new_bindings():
+    from lazyuv.screens.help import _HELP
+
+    assert "p" in _HELP and "python" in _HELP.lower()
+    assert "S" in _HELP
+    assert "v" in _HELP and "venv" in _HELP.lower()

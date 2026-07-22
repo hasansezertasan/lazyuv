@@ -22,7 +22,11 @@ class SyncOptionsScreen(ModalScreen["SyncOptions | None"]):
     def __init__(self, groups: list[tuple[str, str]]) -> None:
         super().__init__()
         self._extras = [name for name, kind in groups if kind == "extra"]
-        self._groups = [name for name, kind in groups if kind in ("group", "dev")]
+        # The `dev` group is excluded here: uv includes it by default and the
+        # `--no-dev` checkbox controls it. Offering it in the multi-select too would
+        # let a user pick `--group dev` AND `--no-dev`, which uv silently resolves to
+        # "no dev" — a confusing contradiction.
+        self._groups = [name for name, kind in groups if kind == "group"]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="sync-dialog"):

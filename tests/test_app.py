@@ -1969,6 +1969,52 @@ async def test_outdated_count_respects_filter():
         assert len(labels) == 1 and "httpx" in labels[0]
 
 
+# --- help page -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_help_is_fullscreen_page_without_wrapping():
+    from lazyuv.screens.help import HelpScreen, _HELP
+    from textual.widgets import Static
+
+    longest = max(len(line) for line in _HELP.splitlines())
+    assert longest > 60  # wider than the old shared dialog width
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+        body = app.screen.query_one("#help-body")
+        # a full-screen page: the body spans (nearly) the whole width, and its text
+        # region is far wider than the longest line -> no wrap on any normal terminal
+        assert body.region.width >= 100
+        assert body.query_one(Static).region.width >= longest
+
+
+@pytest.mark.asyncio
+async def test_help_page_scrollable_when_taller_than_terminal():
+    # On a short terminal the list overflows; the page must be keyboard-scrollable
+    # (focused scroller) so the bottom is reachable, and close on escape and q.
+    from lazyuv.screens.help import HelpScreen
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        body = app.screen.query_one("#help-body")
+        assert body.show_vertical_scrollbar  # content taller than the viewport
+        before = body.scroll_offset.y
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert body.scroll_offset.y > before  # keys actually scroll it
+        await pilot.press("q")  # q closes the page (screen binding wins over app quit)
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)
+
+
 # --- Milestone 7: project version (read / bump) ----------------------------
 
 

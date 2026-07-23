@@ -1,11 +1,12 @@
-"""Help overlay listing keybindings."""
+"""Dedicated full-screen help page listing keybindings."""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Static
+from textual.binding import Binding
+from textual.containers import VerticalScroll
+from textual.screen import Screen
+from textual.widgets import Footer, Static
 
 _HELP = """[b]lazyuv keybindings[/b]
 
@@ -52,18 +53,27 @@ _HELP = """[b]lazyuv keybindings[/b]
   z                compute cache size
   X                uv self update
 
-Press ? or Escape to close."""
+Press ?, q, or Escape to close."""
 
 
-class HelpScreen(ModalScreen[None]):
+class HelpScreen(Screen[None]):
+    """A full-screen help page (not a cramped dialog) — the keybinding list gets the
+    whole viewport, scrolls when taller than the terminal, and closes on ?/q/Esc."""
+
     BINDINGS = [
-        ("escape", "dismiss", "Close"),
-        ("question_mark", "dismiss", "Close"),
+        Binding("escape", "dismiss", "close"),
+        Binding("question_mark", "dismiss", "close", key_display="?"),
+        Binding("q", "dismiss", "close"),
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="help-dialog"):
+        with VerticalScroll(id="help-body"):
             yield Static(_HELP)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        # Focus the scroller so arrow / page keys scroll the page immediately.
+        self.query_one("#help-body").focus()
 
     def action_dismiss(self) -> None:
         self.dismiss(None)

@@ -33,7 +33,7 @@ ToolsPanel, CachePanel, WorkspacePanel {
     padding: 0 1;
 }
 
-#add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog,
+#add-dialog, #confirm-dialog, #python-dialog, #sync-dialog,
 #tool-install-dialog, #workspace-dialog, #export-dialog, #script-dialog,
 #run-args-dialog, #tree-dialog, #version-dialog {
     background: $panel;
@@ -42,6 +42,13 @@ ToolsPanel, CachePanel, WorkspacePanel {
     width: 60;
     height: auto;
     align: center middle;
+}
+
+/* Help is a dedicated full-screen page, not a cramped dialog: the keybinding list
+   gets the whole viewport (no ~60-col wrap) and scrolls when taller than the screen. */
+#help-body {
+    padding: 1 2;
+    height: 1fr;
 }
 
 #python-list { height: auto; max-height: 12; }

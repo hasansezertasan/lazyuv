@@ -35,7 +35,7 @@ _SOURCE_LABELS = {
 }
 
 
-def load_project(root: Path) -> LoadResult:
+def load_project(root: Path, lock_root: Path | None = None) -> LoadResult:
     pyproject_path = root / "pyproject.toml"
     if not pyproject_path.is_file():
         return LoadResult(status=LoadStatus.NOT_A_PROJECT)
@@ -46,7 +46,9 @@ def load_project(root: Path) -> LoadResult:
     except (tomllib.TOMLDecodeError, OSError) as exc:
         return LoadResult(status=LoadStatus.MALFORMED, error=str(exc))
 
-    resolved = _read_lock(root / "uv.lock")
+    # A uv workspace keeps a single lockfile at its root, so a focused member reads
+    # the root's uv.lock (its own dir has none) to show resolved versions.
+    resolved = _read_lock((lock_root or root) / "uv.lock")
 
     project_table = pyproject.get("project", {})
     sources = _read_sources(pyproject)
@@ -191,9 +193,22 @@ def _source_detail(entry: object) -> str:
     return "custom"
 
 
+def _tool_uv(pyproject: dict) -> dict:
+    """Return the [tool.uv] table, or {} when tool / tool.uv isn't a dict.
+
+    A malformed pyproject can make `tool` or `tool.uv` a non-dict (e.g. a string);
+    chaining `.get` on it would raise, so each level is type-checked here.
+    """
+    tool = pyproject.get("tool")
+    if not isinstance(tool, dict):
+        return {}
+    uv = tool.get("uv")
+    return uv if isinstance(uv, dict) else {}
+
+
 def _read_sources(pyproject: dict) -> dict[str, str]:
     """Return {canonical_name: source_detail} from [tool.uv.sources]."""
-    sources = pyproject.get("tool", {}).get("uv", {}).get("sources", {})
+    sources = _tool_uv(pyproject).get("sources", {})
     if not isinstance(sources, dict):
         return {}
     result: dict[str, str] = {}
@@ -211,23 +226,40 @@ def _read_workspace_members(root: Path, pyproject: dict) -> list[WorkspaceMember
     member iff it has a pyproject.toml with a [project].name. Missing/unreadable
     member pyprojects are skipped rather than raising.
     """
-    workspace = pyproject.get("tool", {}).get("uv", {}).get("workspace")
+    workspace = _tool_uv(pyproject).get("workspace")
+    # Only the [tool.uv.workspace] table's ABSENCE means "not a workspace". A table
+    # present but with empty/absent members is still a workspace whose sole member
+    # is the root (spec: the root is always the first member).
     if not isinstance(workspace, dict):
         return []
     member_globs = workspace.get("members") or []
-    if not isinstance(member_globs, list) or not member_globs:
-        return []
+    if not isinstance(member_globs, list):
+        member_globs = []
 
     excluded: set[Path] = set()
     for pattern in workspace.get("exclude") or []:
-        excluded.update(p.resolve() for p in root.glob(pattern))
+        try:
+            matches = list(root.glob(pattern))
+        except (ValueError, NotImplementedError, OSError):
+            continue  # e.g. "." or an absolute path — skip the bad pattern
+        excluded.update(p.resolve() for p in matches)
 
     root_name = pyproject.get("project", {}).get("name", root.name)
     members = [WorkspaceMember(name=root_name, directory="", is_root=True)]
     seen: set[str] = set()
     for pattern in member_globs:
-        for path in sorted(root.glob(pattern)):
+        try:
+            matches = sorted(root.glob(pattern))
+        except (ValueError, NotImplementedError, OSError):
+            continue  # e.g. "." or an absolute path — skip the bad pattern
+        for path in matches:
             if not path.is_dir() or path.resolve() in excluded:
+                continue
+            # A `**` glob can match the root itself (duplicate) or hidden dirs like
+            # `.venv`; neither is a real member.
+            if path.resolve() == root.resolve():
+                continue
+            if any(p.startswith(".") for p in path.relative_to(root).parts):
                 continue
             member_pyproject = path / "pyproject.toml"
             if not member_pyproject.is_file():

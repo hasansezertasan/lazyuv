@@ -982,8 +982,17 @@ def _write_ws(root: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_workspace_panel_shows_and_switches(tmp_path):
+async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch):
     from lazyuv.widgets.workspace import WorkspacePanel
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
 
     _write_ws(tmp_path)
     app = LazyUvApp(root=tmp_path)
@@ -991,7 +1000,7 @@ async def test_workspace_panel_shows_and_switches(tmp_path):
         await pilot.pause()
         wp = app.query_one(WorkspacePanel)
         assert wp.display is True
-        assert [m.name for m in app.workspace_members][0] == "wsroot"
+        assert next(m.name for m in app.workspace_members) == "wsroot"
         assert {m.name for m in app.workspace_members} >= {"wsroot", "alpha", "beta"}
         # switch to member "alpha"
         await pilot.press("w")
@@ -1013,6 +1022,48 @@ async def test_workspace_panel_shows_and_switches(tmp_path):
         ]
         assert any("rich" in lb for lb in labels)
         assert "wsroot" in app.sub_title and "alpha" in app.sub_title
+        # a mutation now runs in the focused member's dir, not the workspace root
+        await pilot.press("s")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["cwd"] == tmp_path / "packages" / "alpha"
+
+
+@pytest.mark.asyncio
+async def test_workspace_switch_back_to_root_rescopes(tmp_path):
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        from textual.widgets import ListView
+
+        # focus member "alpha"
+        await pilot.press("w")
+        await pilot.pause()
+        members = app.workspace_members
+        alpha_idx = next(i for i, m in enumerate(members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = alpha_idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        assert app.focused_member is not None
+        # switch back to the root member
+        await pilot.press("w")
+        await pilot.pause()
+        root_idx = next(i for i, m in enumerate(app.workspace_members) if m.is_root)
+        app.screen.query_one("#workspace-list", ListView).index = root_idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        assert app.focused_member is None
+        # deps re-scope to the root project's own dep ("httpx"), not alpha's "rich"
+        labels = [
+            str(node.label)
+            for group_node in app.query_one(DependenciesPanel).root.children
+            for node in group_node.children
+        ]
+        assert any("httpx" in lb for lb in labels)
+        assert not any("rich" in lb for lb in labels)
 
 
 @pytest.mark.asyncio

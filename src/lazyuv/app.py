@@ -116,7 +116,7 @@ class LazyUvApp(App[None]):
     # Actions available only in one mode; used by check_action to make the footer
     # context-sensitive (inapplicable keys are hidden rather than shown as live).
     _GLOBAL_ACTIONS = frozenset({
-        "tool_install", "tool_upgrade", "tool_upgrade_all", "tool_uninstall",
+        "tool_install", "tool_upgrade_all", "tool_uninstall",
         "cache_clean", "cache_prune", "cache_size", "self_update",
     })
     _PROJECT_ACTIONS = frozenset({
@@ -149,7 +149,9 @@ class LazyUvApp(App[None]):
     # --- loading -----------------------------------------------------------
 
     def refresh_project(self) -> None:
-        result = load_project(self.active_dir)
+        # A workspace keeps one lockfile at the root; a focused member has none, so
+        # read the lock from the workspace root to resolve the member's deps.
+        result = load_project(self.active_dir, lock_root=self.root)
         details = self.query_one(DetailsPanel)
         if result.status is LoadStatus.NOT_A_PROJECT:
             self._clear_project_panels()
@@ -191,9 +193,11 @@ class LazyUvApp(App[None]):
     def _clear_project_panels(self) -> None:
         """Reset project-scoped views so a lost/invalid project shows no stale data."""
         self.project = None
-        if self.focused_member is None or self.focused_member.is_root:
-            self.workspace_members = []
-            self.query_one(WorkspacePanel).display = False
+        # Fully revert workspace focus: a failed load must not leave active_dir
+        # pointing at a member dir that may have been deleted.
+        self.focused_member = None
+        self.workspace_members = []
+        self.query_one(WorkspacePanel).display = False
         self._update_subtitle()
         self.query_one(DependenciesPanel).set_filter(self._filter_text, [])
         self.query_one(ScriptsPanel).load([])
@@ -255,6 +259,10 @@ class LazyUvApp(App[None]):
             self.query_one(DetailsPanel).show_dependency(dep)
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        # A modal's ListView (workspace-list, python-list) must not repaint Details
+        # from the hidden Scripts panel; only the two real panels are handled here.
+        if event.list_view.id not in ("tools", "scripts"):
+            return
         # Both ScriptsPanel and ToolsPanel are ListViews; route by widget id.
         if event.list_view.id == "tools":
             tool = self.query_one(ToolsPanel).selected_tool
@@ -280,9 +288,11 @@ class LazyUvApp(App[None]):
         output = self.query_one(OutputPanel)
         try:
             # Project mutations run in the focused member's dir; global (tool/cache)
-            # commands ignore project cwd, so active_dir is safe for both.
+            # mutations must run at the root, never a member cwd.
             exit_code = await commands.run_streaming(
-                argv, on_line=output.line, cwd=self.active_dir
+                argv,
+                on_line=output.line,
+                cwd=self.root if self.global_mode else self.active_dir,
             )
             output.finish(exit_code)
         except Exception as exc:  # noqa: BLE001 - surface any launch/stream failure
@@ -308,10 +318,14 @@ class LazyUvApp(App[None]):
     def action_sync(self) -> None:
         if self.global_mode:
             return
+        if self.project is None:
+            return
         self._run_uv(commands.build_sync())
 
     def action_lock(self) -> None:
         if self.global_mode:
+            return
+        if self.project is None:
             return
         self._run_uv(commands.build_lock())
 
@@ -416,6 +430,11 @@ class LazyUvApp(App[None]):
     def action_venv(self) -> None:
         if self.global_mode or self.project is None:
             return
+        # The venv is shared at the workspace root; running `uv venv` in a focused
+        # member would plant a disconnected member/.venv.
+        if self.focused_member is not None and not self.focused_member.is_root:
+            self.bell()
+            return
         if self._busy:
             self.bell()
             return
@@ -451,6 +470,11 @@ class LazyUvApp(App[None]):
     def action_workspace(self) -> None:
         if self.global_mode or not self.workspace_members:
             return
+        # Switching members mid-command would make the in-flight worker (which reads
+        # cwd=self.active_dir lazily) run in the wrong dir.
+        if self._busy:
+            self.bell()
+            return
 
         def on_close(directory: str | None) -> None:
             if directory is None:
@@ -472,13 +496,19 @@ class LazyUvApp(App[None]):
     def action_export(self) -> None:
         if self.global_mode or self.project is None:
             return
+        if self._busy:
+            self.bell()
+            return
 
-        def on_close(result: tuple[str, bool, bool, list[str], list[str]] | None) -> None:
+        def on_close(
+            result: tuple[str, str, bool, bool, list[str], list[str]] | None,
+        ) -> None:
             if result is None:
                 return
-            output_file, no_hashes, no_dev, extras, groups = result
+            fmt, output_file, no_hashes, no_dev, extras, groups = result
             self._run_uv(
                 commands.build_export(
+                    fmt=fmt,
                     no_hashes=no_hashes,
                     no_dev=no_dev,
                     extras=extras,
@@ -511,7 +541,10 @@ class LazyUvApp(App[None]):
             self.refresh_project()
 
     def action_tool_install(self) -> None:
-        if not self.global_mode or self._busy:
+        if not self.global_mode:
+            return
+        if self._busy:
+            self.bell()
             return
 
         def on_close(package: str | None) -> None:

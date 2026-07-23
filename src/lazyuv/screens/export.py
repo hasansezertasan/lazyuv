@@ -7,8 +7,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, SelectionList
 
-# Dismiss payload: (output_file, no_hashes, no_dev, extras, groups).
-ExportOptions = tuple[str, bool, bool, list[str], list[str]]
+# Dismiss payload: (fmt, output_file, no_hashes, no_dev, extras, groups).
+ExportOptions = tuple[str, str, bool, bool, list[str], list[str]]
 
 
 class ExportScreen(ModalScreen["ExportOptions | None"]):
@@ -27,6 +27,9 @@ class ExportScreen(ModalScreen["ExportOptions | None"]):
     def compose(self) -> ComposeResult:
         with Vertical(id="export-dialog"):
             yield Label("Export requirements")
+            yield Label("format")
+            yield Input(value="requirements.txt", id="export-format")
+            yield Label("output file")
             yield Input(value="requirements.txt", id="export-output")
             if self._extras:
                 yield Label("extras")
@@ -49,9 +52,11 @@ class ExportScreen(ModalScreen["ExportOptions | None"]):
         if event.button.id == "cancel":
             self.dismiss(None)
             return
+        fmt = self.query_one("#export-format", Input).value.strip() or "requirements.txt"
         output = self.query_one("#export-output", Input).value.strip() or "requirements.txt"
         self.dismiss(
             (
+                fmt,
                 output,
                 self.query_one("#export-no-hashes", Checkbox).value,
                 self.query_one("#export-no-dev", Checkbox).value,

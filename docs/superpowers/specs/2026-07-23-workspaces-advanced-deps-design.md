@@ -99,19 +99,22 @@ dir. (`build_run`/`build_sync`/`build_add`/`build_remove` are unchanged.)
   a workspace is detected* (members non-empty); lists members with the focused one
   marked. Selecting/activating a member (Enter, or the `w` switcher modal) sets the
   app's `focused_member` and reloads via `load_project(member_dir)`; the subtitle
-  shows `root · member`.
-- **Targeted upgrade** — `U` in project mode: `uv lock --upgrade-package <dep>` on the
-  selected dependency (streamed like any mutation). (`U` is free in project mode; it
-  is the global "upgrade all tools" only in global mode — gated by `check_action`.)
+  shows `root · member`. A uv workspace keeps a single lockfile at the workspace
+  root, so a focused member reads that root `uv.lock` (via `lock_root`) to resolve
+  its deps. Creating a venv is a root-scope operation (the venv is shared at the
+  workspace root), so `v` is disabled while a non-root member is focused.
+- **Targeted upgrade** — `u` in project mode: `uv lock --upgrade-package <dep>` on the
+  selected dependency (streamed like any mutation). (`u` upgrades the selected package
+  in project mode and the selected tool in global mode — the universal upgrade key.)
 - **Export** — `e` opens `screens/export.py` (a modal): output filename (default
   `requirements.txt`), `--no-hashes` / `--no-dev` checkboxes, and extras/groups
   multi-selects (reusing the sync-options widget shape). Returns the selections;
   the app runs `build_export(...)`. Output streams to the Output panel; `-o` writes
   the file.
-- **Sources** — `DetailsPanel.show_dependency` appends a `source: <detail>` line when
+- **Sources** — `DetailsPanel.show_dependency` appends a `via: <detail>` line when
   `dep.source_detail` is set (escaped, like the other panels).
 - **Keybindings** — `w` (workspace switcher) and `e` (export) added to project mode;
-  `U` (targeted upgrade) is project-mode via `check_action`. All gated off in global
+  `u` (targeted upgrade) is project-mode via `check_action`. All gated off in global
   mode. Help overlay updated.
 
 ## Testing
@@ -124,9 +127,9 @@ Pilot-based; `run_streaming`/`run_capture` remain the only mock points.
 - **Commands (unit):** `build_lock_upgrade_package` argv; `build_export` with every
   option combination and the bare default.
 - **Integration (Pilot):** workspace panel appears only for a workspace; switching a
-  member re-scopes the deps tree and subtitle; `U` builds the upgrade-package argv on
+  member re-scopes the deps tree and subtitle; `u` builds the upgrade-package argv on
   the selected dep; export modal produces the expected `uv export` argv and streams;
-  Details shows a source line; `w`/`e`/`U` no-op in global mode.
+  Details shows a source line; `w`/`e` no-op in global mode.
 
 ## Non-goals
 

@@ -20,7 +20,7 @@ Screen {
 
 #details { height: 60%; }
 #output { height: 40%; }
-#workspace { height: auto; }
+#workspace { height: auto; max-height: 8; overflow-y: auto; }
 #environment { height: auto; min-height: 5; }
 #dependencies { height: 1fr; min-height: 5; }
 #scripts { height: 40%; }

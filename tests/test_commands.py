@@ -346,4 +346,4 @@ def test_build_version_bump():
 
 
 def test_build_version_set():
-    assert build_version_set("1.2.3") == ["uv", "version", "1.2.3"]
+    assert build_version_set("1.2.3") == ["uv", "version", "--", "1.2.3"]

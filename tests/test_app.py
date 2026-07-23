@@ -2019,7 +2019,7 @@ async def test_version_set_overrides_bump(monkeypatch):
         await pilot.click("#ok")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert captured["argv"] == ["uv", "version", "9.9.9"]
+        assert captured["argv"] == ["uv", "version", "--", "9.9.9"]
 
 
 @pytest.mark.asyncio

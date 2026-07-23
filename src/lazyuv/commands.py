@@ -150,8 +150,12 @@ def build_version_bump(bump: str) -> list[str]:
 
 
 def build_version_set(value: str) -> list[str]:
-    """`uv version <VALUE>` — set the project version to an explicit value."""
-    return ["uv", "version", value]
+    """`uv version -- <VALUE>` — set the project version to an explicit value.
+
+    The `--` guards a value that begins with `-` (uv would otherwise parse it as an
+    option); verified accepted on uv 0.11.31.
+    """
+    return ["uv", "version", "--", value]
 
 
 def build_python_list() -> list[str]:

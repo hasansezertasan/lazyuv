@@ -50,6 +50,11 @@ from lazyuv.widgets.workspace import WorkspacePanel
 
 STYLES = Path(__file__).parent / "styles.tcss"
 
+# Bounds the network-dependent `uv tree` queries so a stalled connection can't leave
+# the UI wedged (`_busy` stuck True, title stuck "checking…"). Generous enough not to
+# false-trip a slow-but-working index lookup across many packages.
+_TREE_QUERY_TIMEOUT = 60.0
+
 
 class LazyUvApp(App[None]):
     CSS_PATH = STYLES
@@ -659,7 +664,9 @@ class LazyUvApp(App[None]):
         output = self.query_one(OutputPanel)
         try:
             code, out = await commands.run_capture(
-                commands.build_tree(package=self._focused_package), cwd=self.active_dir
+                commands.build_tree(package=self._focused_package),
+                cwd=self.active_dir,
+                timeout=_TREE_QUERY_TIMEOUT,
             )
         except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
             output.line(f"error: {exc}")
@@ -697,6 +704,7 @@ class LazyUvApp(App[None]):
             code, out = await commands.run_capture(
                 commands.build_tree(outdated=True, package=self._focused_package),
                 cwd=self.active_dir,
+                timeout=_TREE_QUERY_TIMEOUT,
             )
         except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
             output.line(f"error: {exc}")

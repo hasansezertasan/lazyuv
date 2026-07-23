@@ -53,12 +53,21 @@ class DependenciesPanel(Tree):
             return latest
         return None
 
+    def _visible(self, dep: Dependency) -> bool:
+        """Whether `dep` passes the active name filter (what `_populate` renders)."""
+        return not self._filter or self._filter in dep.name.lower()
+
     def _repopulate(self) -> None:
         title = "Dependencies"
         if self._filter:
             title += f" — filter: {self._filter}"
         if self._outdated_active:
-            n = sum(1 for d in self._dependencies if self._latest_for(d) is not None)
+            # Count only the *visible* (filtered) outdated deps, so the count always
+            # matches the annotated leaves the user can actually see.
+            n = sum(
+                1 for d in self._dependencies
+                if self._visible(d) and self._latest_for(d) is not None
+            )
             title += f" — outdated: {n}"
         self.border_title = title
         self.clear()
@@ -84,7 +93,7 @@ class DependenciesPanel(Tree):
     def _populate(self, dependencies: list[Dependency]) -> None:
         groups: dict[str, list[Dependency]] = {}
         for dep in dependencies:
-            if self._filter and self._filter not in dep.name.lower():
+            if not self._visible(dep):
                 continue
             groups.setdefault(dep.group, []).append(dep)
 

@@ -252,7 +252,9 @@ async def run_streaming(
             await process.wait()
 
 
-async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
+async def run_capture(
+    argv: list[str], cwd: Path | None = None, timeout: float | None = None
+) -> tuple[int, str]:
     """Run `argv` to completion and return (exit_code, stdout).
 
     The read-only counterpart to `run_streaming`: for queries like `uv python list`
@@ -260,6 +262,11 @@ async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, st
     kept OUT of the returned output — a uv warning/progress line on stderr must not
     corrupt the JSON. Like `run_streaming`, the child is terminated and awaited if
     cancelled, so it is never orphaned.
+
+    `timeout` (seconds) bounds a network-dependent query (e.g. `uv tree --outdated`)
+    so a stalled connection can't hang the caller forever: on expiry the child is
+    terminated and `TimeoutError` is raised. `None` (the default) waits indefinitely,
+    preserving the original behavior for the fast local queries.
     """
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -268,8 +275,12 @@ async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, st
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _stderr = await process.communicate()
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout)
         return process.returncode or 0, stdout.decode(errors="replace")
+    except TimeoutError as exc:
+        raise TimeoutError(
+            f"`{' '.join(argv)}` timed out after {timeout:g}s"
+        ) from exc
     finally:
         if process.returncode is None:
             try:

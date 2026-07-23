@@ -44,20 +44,11 @@ ToolsPanel, CachePanel, WorkspacePanel {
     align: center middle;
 }
 
-/* Help lists every keybinding, so its widest line (~70 cols) overflowed the shared
-   width:60 and wrapped. Widen it to comfortably fit the content (border + padding +
-   the ~70-col line), cap to the viewport on narrow terminals, and scroll when the
-   list is taller than the screen. */
-#help-dialog {
-    background: $panel;
-    border: thick $primary;
+/* Help is a dedicated full-screen page, not a cramped dialog: the keybinding list
+   gets the whole viewport (no ~60-col wrap) and scrolls when taller than the screen. */
+#help-body {
     padding: 1 2;
-    width: 84;
-    max-width: 100%;
-    height: auto;
-    max-height: 100%;
-    overflow-y: auto;
-    align: center middle;
+    height: 1fr;
 }
 
 #python-list { height: auto; max-height: 12; }

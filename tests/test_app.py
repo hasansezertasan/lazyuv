@@ -1969,17 +1969,16 @@ async def test_outdated_count_respects_filter():
         assert len(labels) == 1 and "httpx" in labels[0]
 
 
-# --- help panel width ------------------------------------------------------
+# --- help page -------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_help_dialog_fits_content_without_wrapping():
+async def test_help_is_fullscreen_page_without_wrapping():
     from lazyuv.screens.help import HelpScreen, _HELP
     from textual.widgets import Static
 
     longest = max(len(line) for line in _HELP.splitlines())
-    # sanity: the content really is wider than the old shared width (60)
-    assert longest > 60
+    assert longest > 60  # wider than the old shared dialog width
 
     app = LazyUvApp(root=FIXTURE)
     async with app.run_test(size=(120, 40)) as pilot:
@@ -1987,18 +1986,17 @@ async def test_help_dialog_fits_content_without_wrapping():
         await pilot.press("question_mark")
         await pilot.pause()
         assert isinstance(app.screen, HelpScreen)
-        static = app.screen.query_one(Static)
-        # the text region must be at least as wide as the longest line -> no wrap
-        assert static.region.width >= longest
-        # and the dialog must stay within the viewport
-        dialog = app.screen.query_one("#help-dialog")
-        assert dialog.region.width <= 120
+        body = app.screen.query_one("#help-body")
+        # a full-screen page: the body spans (nearly) the whole width, and its text
+        # region is far wider than the longest line -> no wrap on any normal terminal
+        assert body.region.width >= 100
+        assert app.screen.query_one(Static).region.width >= longest
 
 
 @pytest.mark.asyncio
-async def test_help_dialog_scrollable_when_taller_than_terminal():
-    # On a short terminal the keybinding list overflows; it must be keyboard-scrollable
-    # (focused scroller) so the bottom is reachable, and still close on escape.
+async def test_help_page_scrollable_when_taller_than_terminal():
+    # On a short terminal the list overflows; the page must be keyboard-scrollable
+    # (focused scroller) so the bottom is reachable, and close on escape and q.
     from lazyuv.screens.help import HelpScreen
 
     app = LazyUvApp(root=FIXTURE)
@@ -2006,12 +2004,12 @@ async def test_help_dialog_scrollable_when_taller_than_terminal():
         await pilot.pause()
         await pilot.press("question_mark")
         await pilot.pause()
-        dialog = app.screen.query_one("#help-dialog")
-        assert dialog.show_vertical_scrollbar  # content taller than the viewport
-        before = dialog.scroll_offset.y
+        body = app.screen.query_one("#help-body")
+        assert body.show_vertical_scrollbar  # content taller than the viewport
+        before = body.scroll_offset.y
         await pilot.press("pagedown")
         await pilot.pause()
-        assert dialog.scroll_offset.y > before  # keys actually scroll it
-        await pilot.press("escape")
+        assert body.scroll_offset.y > before  # keys actually scroll it
+        await pilot.press("q")  # q closes the page (screen binding wins over app quit)
         await pilot.pause()
-        assert not isinstance(app.screen, HelpScreen)  # still closes
+        assert not isinstance(app.screen, HelpScreen)

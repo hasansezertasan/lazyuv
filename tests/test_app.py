@@ -1967,3 +1967,29 @@ async def test_outdated_count_respects_filter():
             for node in group_node.children
         ]
         assert len(labels) == 1 and "httpx" in labels[0]
+
+
+# --- help panel width ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_help_dialog_fits_content_without_wrapping():
+    from lazyuv.screens.help import HelpScreen, _HELP
+    from textual.widgets import Static
+
+    longest = max(len(line) for line in _HELP.splitlines())
+    # sanity: the content really is wider than the old shared width (60)
+    assert longest > 60
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+        static = app.screen.query_one(Static)
+        # the text region must be at least as wide as the longest line -> no wrap
+        assert static.region.width >= longest
+        # and the dialog must stay within the viewport
+        dialog = app.screen.query_one("#help-dialog")
+        assert dialog.region.width <= 120

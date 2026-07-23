@@ -183,7 +183,8 @@ block from the TUI (→ `$EDITOR`, matching M4's source/index stance), a separat
 `lazyuv script <file>` CLI, and `uv lock/sync/export --script`.
 
 **Features:** detect/edit PEP 723 `# /// script` blocks, `uv add --script <file>`,
-`uv run <file>`, and manage a script's inline deps the way v1 manages project deps.
+`uv run --script <file>`, and manage a script's inline deps the way v1 manages
+project deps.
 
 **UI impact:** a "script mode" reusing the dependency panel against a single file's
 inline metadata instead of `pyproject.toml`.

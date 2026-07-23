@@ -747,6 +747,17 @@ def test_find_scripts_reports_truncation(tmp_path, monkeypatch):
     assert len(scripts) == 3
 
 
+def test_find_scripts_exact_cap_is_not_truncated(tmp_path, monkeypatch):
+    # A tree with exactly _SCRIPT_SCAN_CAP files is complete — nothing omitted, so
+    # it must NOT warn about truncation (off-by-one on the signal).
+    monkeypatch.setattr("lazyuv.data._SCRIPT_SCAN_CAP", 3)
+    for i in range(3):
+        (tmp_path / f"s{i}.py").write_text("")
+    scripts, truncated = find_scripts(tmp_path)
+    assert truncated is False
+    assert len(scripts) == 3
+
+
 def test_find_scripts_prunes_vendor_dirs(tmp_path):
     (tmp_path / "keep.py").write_text("")
     for vendor in ("node_modules", "__pycache__", "build"):

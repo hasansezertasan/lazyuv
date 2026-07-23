@@ -418,9 +418,11 @@ def find_scripts(root: Path) -> tuple[list[str], bool]:
             if not name.endswith(".py"):
                 continue
             found.append(str((Path(dirpath) / name).relative_to(root)))
-            if len(found) >= _SCRIPT_SCAN_CAP:
+            # Only truncated once a (cap+1)-th file is actually found — an exactly-cap
+            # tree is complete, so it must not warn that results were omitted.
+            if len(found) > _SCRIPT_SCAN_CAP:
                 found.sort()
-                return found, True
+                return found[:_SCRIPT_SCAN_CAP], True
         if truncated:
             break
     found.sort()

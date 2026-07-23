@@ -610,7 +610,7 @@ class LazyUvApp(App[None]):
 
         def recreate(confirmed: bool) -> None:
             if confirmed:
-                # `--clear` when a venv exists: uv refuses to recreate over it otherwise.
+                # `--clear` when a venv exists: uv refuses to recreate over it.
                 self._run_uv(commands.build_venv(pin, clear=exists))
 
         if exists:

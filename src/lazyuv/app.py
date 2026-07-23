@@ -14,19 +14,23 @@ from textual.widgets import Footer, Header, ListView, Tree
 from lazyuv import commands
 from lazyuv.data import (
     directory_size,
+    find_scripts,
     format_size,
     load_project,
+    load_script,
     parse_python_list,
     parse_tool_list,
     parse_uv_version,
 )
-from lazyuv.models import LoadStatus, Project, Tool, WorkspaceMember
+from lazyuv.models import InlineScript, LoadStatus, Project, Tool, WorkspaceMember
 from lazyuv.screens.add_dependency import AddDependencyScreen
+from lazyuv.screens.add_script_dependency import AddScriptDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
 from lazyuv.screens.export import ExportScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
 from lazyuv.screens.python import PythonPickerScreen
+from lazyuv.screens.script_picker import ScriptPickerScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.screens.tool_install import ToolInstallScreen
 from lazyuv.screens.workspace import WorkspaceSwitchScreen
@@ -61,6 +65,9 @@ class LazyUvApp(App[None]):
         Binding("e", "export", "export"),
         Binding("slash", "filter", "filter", key_display="/"),
         Binding("g", "toggle_mode", "global"),
+        # inline-script mode: `o` opens/switches a script; escape leaves script mode
+        Binding("o", "open_script", "script"),
+        Binding("escape", "exit_script", "exit script"),
         # `u` upgrades the selected thing in either mode (tool / package)
         Binding("u", "upgrade", "upgrade"),
         # global-mode actions (no-op in project mode)
@@ -88,6 +95,10 @@ class LazyUvApp(App[None]):
         self.workspace_members: list[WorkspaceMember] = []
         self.workspace_root_name: str = ""
         self.focused_member: WorkspaceMember | None = None
+        # Inline-script (PEP 723) mode: the focused `.py` file, relative to
+        # active_dir. None means not in script mode.
+        self.script_path: Path | None = None
+        self.inline_script: InlineScript | None = None
 
     @property
     def active_dir(self) -> Path:
@@ -95,6 +106,19 @@ class LazyUvApp(App[None]):
         if self.focused_member is not None:
             return self.root / self.focused_member.directory
         return self.root
+
+    @property
+    def mode(self) -> str:
+        """The active top-level mode: 'global', 'script', or 'project' (default).
+
+        The three are mutually exclusive: entering global clears the script focus and
+        vice versa, so at most one of `global_mode` / `script_path` is ever set.
+        """
+        if self.global_mode:
+            return "global"
+        if self.script_path is not None:
+            return "script"
+        return "project"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -119,17 +143,28 @@ class LazyUvApp(App[None]):
         "tool_install", "tool_upgrade_all", "tool_uninstall",
         "cache_clean", "cache_prune", "cache_size", "self_update",
     })
-    _PROJECT_ACTIONS = frozenset({
-        "add", "remove", "sync", "sync_options", "lock", "run", "python",
-        "venv", "filter", "workspace", "export",
+    # Project-only: inert in both global and script mode.
+    _PROJECT_ONLY_ACTIONS = frozenset({
+        "sync", "sync_options", "lock", "python", "venv", "filter",
+        "workspace", "export",
     })
+    # Shared by project and script mode (dispatch branches on `self.mode`).
+    _PROJECT_OR_SCRIPT_ACTIONS = frozenset({"add", "remove", "run", "open_script"})
+    _SCRIPT_ONLY_ACTIONS = frozenset({"exit_script"})
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        # `upgrade` is universal (tool in global mode, package in project mode).
+        mode = self.mode
         if action in self._GLOBAL_ACTIONS:
-            return True if self.global_mode else None
-        if action in self._PROJECT_ACTIONS:
-            return None if self.global_mode else True
+            return True if mode == "global" else None
+        if action in self._PROJECT_ONLY_ACTIONS:
+            return True if mode == "project" else None
+        if action in self._SCRIPT_ONLY_ACTIONS:
+            return True if mode == "script" else None
+        if action in self._PROJECT_OR_SCRIPT_ACTIONS:
+            return True if mode in ("project", "script") else None
+        # `upgrade` is a tool (global) or package (project) op — not a script op.
+        if action == "upgrade":
+            return True if mode in ("global", "project") else None
         return True
 
     def on_mount(self) -> None:
@@ -149,6 +184,9 @@ class LazyUvApp(App[None]):
     # --- loading -----------------------------------------------------------
 
     def refresh_project(self) -> None:
+        # Project mode owns the full sub-panel set; restore any that script mode hid.
+        self.query_one(EnvironmentPanel).display = True
+        self.query_one(ScriptsPanel).display = True
         # A workspace keeps one lockfile at the root; a focused member has none, so
         # read the lock from the workspace root to resolve the member's deps.
         result = load_project(self.active_dir, lock_root=self.root)
@@ -182,6 +220,32 @@ class LazyUvApp(App[None]):
         self.query_one(ScriptsPanel).load(self.project.scripts)
         self.query_one(EnvironmentPanel).show(self.project.environment)
 
+    def refresh_script(self) -> None:
+        """Re-read the focused inline script and show its deps in the deps panel.
+
+        Script mode reuses #project-panels but shows only the Dependencies panel — a
+        script has no venv, workspace, or [project.scripts]. A read failure surfaces
+        on Output and drops back to project mode (never a stale/blank script view).
+        """
+        assert self.script_path is not None
+        script = load_script(self.active_dir / self.script_path)
+        if script is None:
+            self.query_one(OutputPanel).line(f"cannot read {self.script_path}")
+            self.action_exit_script()
+            return
+        self.inline_script = script
+        self.query_one(WorkspacePanel).display = False
+        self.query_one(EnvironmentPanel).display = False
+        self.query_one(ScriptsPanel).display = False
+        self._update_subtitle()
+        panel = self.query_one(DependenciesPanel)
+        previous = panel.selected_dependency
+        panel.set_filter("", script.dependencies)
+        if previous is not None:
+            self.call_after_refresh(
+                panel.restore_selection, previous.group, previous.name
+            )
+
     def _update_workspace_panel(self) -> None:
         panel = self.query_one(WorkspacePanel)
         has_workspace = bool(self.workspace_members)
@@ -207,6 +271,8 @@ class LazyUvApp(App[None]):
         parts: list[str] = []
         if self.global_mode:
             parts.append("global")
+        elif self.script_path is not None:
+            parts.append(f"script · {self.script_path}")
         elif self.project is not None:
             name = f"{self.project.name} {self.project.version}"
             # In a focused non-root member, prefix the workspace root: "root · member".
@@ -306,6 +372,9 @@ class LazyUvApp(App[None]):
             # mid-transition (which would let a second mutation start concurrently).
             if self.global_mode:
                 self.run_worker(self._refresh_global())
+            elif self.script_path is not None:
+                self._busy = False
+                self.refresh_script()
             else:
                 self._busy = False
                 self.refresh_project()
@@ -330,6 +399,11 @@ class LazyUvApp(App[None]):
         self._run_uv(commands.build_lock())
 
     def action_run(self) -> None:
+        # Script mode runs the focused inline script; project mode runs the selected
+        # [project.scripts] entry.
+        if self.mode == "script":
+            self._run_uv(commands.build_run_script(str(self.script_path)))
+            return
         if self.global_mode:
             return
         script = self.query_one(ScriptsPanel).selected_script
@@ -337,6 +411,15 @@ class LazyUvApp(App[None]):
             self._run_uv(commands.build_run(script.name))
 
     def action_add(self) -> None:
+        if self.mode == "script":
+            def on_close_script(packages: list[str] | None) -> None:
+                if packages:
+                    self._run_uv(
+                        commands.build_add_script(str(self.script_path), packages)
+                    )
+
+            self.push_screen(AddScriptDependencyScreen(), on_close_script)
+            return
         if self.global_mode or self.project is None:
             return
 
@@ -354,8 +437,17 @@ class LazyUvApp(App[None]):
         if dep is None:
             return
 
+        # In script mode, remove targets the script's inline block, not a project.
+        script_mode = self.mode == "script"
+
         def on_close(confirmed: bool) -> None:
-            if confirmed:
+            if not confirmed:
+                return
+            if script_mode:
+                self._run_uv(
+                    commands.build_remove_script(str(self.script_path), dep.name)
+                )
+            else:
                 self._run_uv(commands.build_remove(dep.name, dep.group, dep.kind))
 
         self.push_screen(ConfirmScreen(f"Remove {dep.name}?"), on_close)
@@ -519,12 +611,61 @@ class LazyUvApp(App[None]):
 
         self.push_screen(ExportScreen(self.project.groups), on_close)
 
+    # --- inline-script mode (PEP 723) --------------------------------------
+
+    def action_open_script(self) -> None:
+        """Open the script picker to enter or switch the focused inline script.
+
+        The file scan runs off the event loop (a large tree could otherwise freeze
+        the UI). `_busy` is held for the whole picker lifecycle — like the Python
+        picker — so the scan can't race a mutation and a second `o` can't stack modals.
+        """
+        if self.global_mode:
+            return
+        if self._busy:
+            self.bell()
+            return
+        self._busy = True
+        self.run_worker(self._open_script_picker())
+
+    async def _open_script_picker(self) -> None:
+        scripts, truncated = await asyncio.to_thread(find_scripts, self.active_dir)
+        focused = str(self.script_path) if self.script_path is not None else None
+
+        def on_close(path: str | None) -> None:
+            self._busy = False  # release before dispatching so refresh can run
+            if path is None:
+                return
+            self.script_path = Path(path)
+            self.set_focus(self.query_one(DependenciesPanel))
+            self.refresh_script()
+            self.refresh_bindings()  # footer shows script-mode keys
+
+        self.push_screen(ScriptPickerScreen(scripts, focused, truncated), on_close)
+
+    def action_exit_script(self) -> None:
+        """Leave script mode, restoring the project view."""
+        if self.mode != "script":
+            return
+        if self._busy:
+            self.bell()
+            return
+        self.script_path = None
+        self.inline_script = None
+        self.set_focus(self.query_one(DependenciesPanel))
+        self.refresh_project()
+        self.refresh_bindings()  # footer returns to project-mode keys
+
     # --- global mode (tools / cache / self) --------------------------------
 
     def action_toggle_mode(self) -> None:
         if self._busy:
             self.bell()
             return
+        # Global and script mode are mutually exclusive: entering/leaving global
+        # always clears any script focus so the two never overlap.
+        self.script_path = None
+        self.inline_script = None
         self.global_mode = not self.global_mode
         self.query_one("#project-panels").display = not self.global_mode
         self.query_one("#global-panels").display = self.global_mode

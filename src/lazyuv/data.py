@@ -14,6 +14,7 @@ from pathlib import Path
 from lazyuv.models import (
     Dependency,
     Environment,
+    InlineScript,
     LoadResult,
     LoadStatus,
     Project,
@@ -293,6 +294,139 @@ def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
     for name in pyproject.get("dependency-groups", {}):
         groups.append((name, "dev" if name == "dev" else "group"))
     return groups
+
+
+# --- inline scripts (PEP 723) read path ------------------------------------
+
+# The reference PEP 723 block regex, matching uv's own writer: a `# /// <type>`
+# line, one or more `#`/`# ...` comment lines, then a closing `# ///` line.
+_PEP723_RE = re.compile(
+    r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+)
+
+# A bounded walk keeps the picker responsive on large trees. Two independent caps
+# bound it: `_SCRIPT_SCAN_CAP` limits collected `.py` files, and `_SCRIPT_DIR_CAP`
+# limits directories visited so a huge tree with FEW Python files (e.g. a
+# `node_modules`) can't make the walk run unbounded. Either cap → `truncated`, and
+# the picker offers a free-text path so a script beyond the cap is still reachable.
+_SCRIPT_SCAN_CAP = 500
+_SCRIPT_DIR_CAP = 2000
+
+# Non-hidden directories that are large and never hold a user's own scripts; pruned
+# from the walk (dot-dirs like `.venv`/`.git` are already skipped separately).
+_SCRIPT_SKIP_DIRS = frozenset({
+    "node_modules", "__pycache__", "site-packages", "dist", "build",
+    ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+})
+
+
+def parse_pep723_block(text: str) -> dict | None:
+    """Return the parsed PEP 723 `script` metadata table, or None.
+
+    Extracts the single `# /// script … # ///` block, strips the `# `/`#` comment
+    prefix from each content line, and `tomllib`-parses the result. Returns None
+    when there is no block, MORE THAN ONE block (PEP 723 forbids it), or the content
+    is not valid TOML — every ambiguous case reads as "no inline metadata" rather
+    than raising, so a malformed file is still openable and repairable via uv.
+    """
+    matches = [m for m in _PEP723_RE.finditer(text) if m.group("type") == "script"]
+    if len(matches) != 1:
+        return None
+    content = "".join(
+        line[2:] if line.startswith("# ") else line[1:]
+        for line in matches[0].group("content").splitlines(keepends=True)
+    )
+    try:
+        parsed = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return None
+    return parsed
+
+
+def load_script(path: Path) -> InlineScript | None:
+    """Load a `.py` script's inline metadata into an InlineScript (files only).
+
+    Returns None only when the file cannot be read. A readable file with no PEP 723
+    block yields `has_block=False` and no deps. Declared dependencies are resolved
+    against the companion `<path>.lock` (same shape as uv.lock) when it exists,
+    reusing the project lock reader.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    metadata = parse_pep723_block(text)
+    if metadata is None:
+        return InlineScript(path=str(path), has_block=False)
+
+    resolved = _read_lock(path.with_name(path.name + ".lock"))
+    requirements = metadata.get("dependencies")
+    if not isinstance(requirements, list):
+        requirements = []
+    dependencies: list[Dependency] = []
+    for requirement in requirements:
+        if not isinstance(requirement, str):
+            continue
+        name, spec = split_requirement(requirement)
+        version, source, locked_versions = _resolve_entries(resolved.get(name, []))
+        dependencies.append(
+            Dependency(
+                name=name,
+                spec=spec,
+                group="script",
+                resolved_version=version,
+                source=source,
+                kind="script",
+                locked_versions=locked_versions,
+            )
+        )
+
+    requires_python = metadata.get("requires-python")
+    return InlineScript(
+        path=str(path),
+        requires_python=requires_python if isinstance(requires_python, str) else "",
+        dependencies=dependencies,
+        has_block=True,
+    )
+
+
+def find_scripts(root: Path) -> tuple[list[str], bool]:
+    """Return (sorted relative `.py` paths under `root`, truncated?).
+
+    A doubly-bounded walk: it skips dot-dirs and known vendor dirs
+    (`_SCRIPT_SKIP_DIRS`), and stops at whichever comes first — `_SCRIPT_SCAN_CAP`
+    collected files or `_SCRIPT_DIR_CAP` visited directories. The directory cap keeps
+    a tree with many dirs but few `.py` files from walking unbounded. Either cap sets
+    `truncated` so the caller can note it (and offer a manual path) rather than hide
+    that the list is partial.
+    """
+    found: list[str] = []
+    truncated = False
+    dirs_visited = 0
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
+        dirs_visited += 1
+        if dirs_visited >= _SCRIPT_DIR_CAP:
+            truncated = True
+            dirnames[:] = []  # stop descending; finish this dir's files then exit
+        else:
+            dirnames[:] = sorted(
+                d for d in dirnames
+                if not d.startswith(".") and d not in _SCRIPT_SKIP_DIRS
+            )
+        for name in sorted(filenames):
+            if not name.endswith(".py"):
+                continue
+            found.append(str((Path(dirpath) / name).relative_to(root)))
+            # Only truncated once a (cap+1)-th file is actually found — an exactly-cap
+            # tree is complete, so it must not warn that results were omitted.
+            if len(found) > _SCRIPT_SCAN_CAP:
+                found.sort()
+                return found[:_SCRIPT_SCAN_CAP], True
+        if truncated:
+            break
+    found.sort()
+    return found, truncated
 
 
 # --- environment (Python / venv) read path --------------------------------

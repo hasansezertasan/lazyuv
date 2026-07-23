@@ -23,9 +23,18 @@ _HELP = """[b]lazyuv keybindings[/b]
   w                switch workspace member
   e                export requirements (uv export)
   /                filter dependencies
+  o                open / switch an inline script (PEP 723)
   g                toggle project / global mode
   ?                toggle this help
   q                quit
+
+[b]script mode[/b] (a `.py` file's inline deps)
+
+  a                add script dependencies (uv add --script)
+  d                remove selected dependency (uv remove --script)
+  r                run the script (uv run --script)
+  o                switch to another script
+  Escape           back to project mode
 
 [b]global mode[/b]
 

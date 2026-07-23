@@ -90,6 +90,22 @@ class PythonVersion:
     path: str | None = None   # interpreter path when installed, else None
 
 
+@dataclass(frozen=True, slots=True)
+class InlineScript:
+    """A standalone `.py` script with PEP 723 inline metadata (`# /// script`).
+
+    Read from the file only (no subprocess). `dependencies` reuses `Dependency`
+    with `group`/`kind` == "script"; versions are resolved from the companion
+    `<file>.lock` when present. `has_block` is False for a readable `.py` that has
+    no inline block yet (still runnable; `uv add --script` creates the block).
+    """
+
+    path: str
+    requires_python: str = ""
+    dependencies: list[Dependency] = field(default_factory=list)
+    has_block: bool = False
+
+
 @dataclass(slots=True)
 class Project:
     name: str

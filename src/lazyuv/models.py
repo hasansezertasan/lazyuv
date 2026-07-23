@@ -27,6 +27,19 @@ class Dependency:
     # markers/conflicts, so it neither labels nor scopes these — it just surfaces
     # every locked version.
     locked_versions: tuple[str, ...] = ()
+    # Where the dep comes from per [tool.uv.sources], as a short human string
+    # (e.g. "workspace", "git (<url>)", "path (<path>)"); "" when it has no
+    # sources entry (the common registry case).
+    source_detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceMember:
+    """A member of a uv workspace ([tool.uv.workspace])."""
+
+    name: str            # the member's [project].name
+    directory: str       # relative to the workspace root; "" for the root itself
+    is_root: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +102,9 @@ class Project:
     groups: list[tuple[str, str]] = field(default_factory=list)
     # Python/venv state; None only when this is not a loaded project.
     environment: Environment | None = None
+    # Workspace members when this project is a [tool.uv.workspace] root (root first);
+    # empty when it is not a workspace.
+    workspace_members: list[WorkspaceMember] = field(default_factory=list)
 
 
 @dataclass(slots=True)

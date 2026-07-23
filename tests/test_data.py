@@ -460,3 +460,147 @@ def test_directory_size_on_a_file_is_zero(tmp_path):
     f.write_bytes(b"x" * 100)
     # a non-directory path yields 0 (documented "0 if missing/unreadable")
     assert directory_size(f) == 0
+
+
+# --- M4: sources & workspaces ----------------------------------------------
+
+
+def test_source_detail_for_each_kind():
+    from lazyuv.data import _source_detail
+
+    assert _source_detail({"workspace": True}) == "workspace"
+    assert _source_detail({"git": "https://x/y.git"}) == "git (https://x/y.git)"
+    assert _source_detail({"path": "../lib"}) == "path (../lib)"
+    assert _source_detail({"path": "../lib", "editable": True}) == "path (../lib) editable"
+    assert _source_detail({"editable": True}) == "editable"
+    assert _source_detail("nonsense") == ""
+
+
+def test_load_attaches_source_detail(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["mylib", "httpx"]\n\n'
+        "[tool.uv.sources]\n"
+        "mylib = { workspace = true }\n"
+    )
+    proj = load_project(tmp_path).project
+    by_name = {d.name: d for d in proj.dependencies}
+    assert by_name["mylib"].source_detail == "workspace"
+    assert by_name["httpx"].source_detail == ""  # no sources entry
+
+
+def _write_workspace(root: Path) -> None:
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "wsroot"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.uv.workspace]\n"
+        'members = ["packages/*"]\n'
+        'exclude = ["packages/skip"]\n'
+    )
+    for name in ("alpha", "beta", "skip"):
+        d = root / "packages" / name
+        d.mkdir(parents=True)
+        (d / "pyproject.toml").write_text(
+            "[project]\n"
+            f'name = "{name}"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.14"\n'
+            "dependencies = []\n"
+        )
+    # a directory that matches the glob but has no pyproject -> not a member
+    (root / "packages" / "notapkg").mkdir()
+
+
+def test_workspace_members_resolved(tmp_path):
+    _write_workspace(tmp_path)
+    proj = load_project(tmp_path).project
+    members = proj.workspace_members
+    names = [m.name for m in members]
+    assert names[0] == "wsroot" and members[0].is_root  # root first
+    assert "alpha" in names and "beta" in names
+    assert "skip" not in names  # excluded
+    assert all(m.name != "notapkg" for m in members)  # no pyproject -> skipped
+    alpha = next(m for m in members if m.name == "alpha")
+    assert alpha.directory == "packages/alpha"
+
+
+def test_non_workspace_has_no_members():
+    proj = load_project(FIXTURE).project
+    assert proj.workspace_members == []
+
+
+def test_load_member_directory_scopes_to_member(tmp_path):
+    _write_workspace(tmp_path)
+    (tmp_path / "packages" / "alpha" / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "alpha"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["rich"]\n'
+    )
+    member = load_project(tmp_path / "packages" / "alpha").project
+    assert member.name == "alpha"
+    assert [d.name for d in member.dependencies] == ["rich"]
+
+
+def test_workspace_dot_member_glob_does_not_raise(tmp_path):
+    # A pathological glob like "." must be skipped, not crash the load.
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "wsroot"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.uv.workspace]\n"
+        'members = ["."]\n'
+    )
+    result = load_project(tmp_path)
+    assert result.status is LoadStatus.OK
+    # workspace table present -> root is the sole member; the "." glob is skipped
+    assert [m.name for m in result.project.workspace_members] == ["wsroot"]
+
+
+def test_workspace_empty_members_is_root_only(tmp_path):
+    # A [tool.uv.workspace] table with no members is still a workspace: root only.
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "wsroot"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.uv.workspace]\n"
+    )
+    proj = load_project(tmp_path).project
+    members = proj.workspace_members
+    assert len(members) == 1
+    assert members[0].name == "wsroot" and members[0].is_root
+
+
+def test_member_lock_read_from_workspace_root(tmp_path):
+    # A workspace keeps one lockfile at the root; loading a member with lock_root=root
+    # must resolve that member's deps from the root's uv.lock.
+    _write_workspace(tmp_path)
+    (tmp_path / "packages" / "alpha" / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "alpha"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["rich"]\n'
+    )
+    (tmp_path / "uv.lock").write_text(
+        "version = 1\n"
+        'requires-python = ">=3.14"\n\n'
+        "[[package]]\n"
+        'name = "rich"\n'
+        'version = "13.7.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+    )
+    member = load_project(tmp_path / "packages" / "alpha", lock_root=tmp_path).project
+    rich = next(d for d in member.dependencies if d.name == "rich")
+    assert rich.resolved_version == "13.7.1"

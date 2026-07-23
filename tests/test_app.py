@@ -2279,7 +2279,7 @@ async def test_version_failure_resets_busy(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_init_gating(tmp_path):
-    # init is live ONLY on the not-a-project screen.
+    # init is live ONLY when there's genuinely no pyproject.toml.
     app = LazyUvApp(root=tmp_path)  # empty dir -> not a project
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -2291,6 +2291,44 @@ async def test_init_gating(tmp_path):
         await pilot.pause()
         assert app2.project is not None
         assert app2.check_action("init", ()) is None  # uv would refuse anyway
+
+
+@pytest.mark.asyncio
+async def test_init_inert_when_pyproject_malformed(tmp_path):
+    # A malformed pyproject also leaves project None, but uv init would refuse it —
+    # so init must be gated on file absence, not on `project is None`.
+    (tmp_path / "pyproject.toml").write_text("this is = = not toml")
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project is None
+        assert app.check_action("init", ()) is None
+
+
+@pytest.mark.asyncio
+async def test_init_binding_deactivates_after_project_created(tmp_path, monkeypatch):
+    # After a successful init the footer must stop advertising `n` (bindings refreshed).
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\n"
+            'name = "fresh"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.14"\n'
+            "dependencies = []\n"
+        )
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.check_action("init", ()) is True
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.check_action("init", ()) is None  # now a project exists
 
 
 @pytest.mark.asyncio

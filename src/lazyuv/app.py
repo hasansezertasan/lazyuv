@@ -120,6 +120,9 @@ class LazyUvApp(App[None]):
         self.inline_script: InlineScript | None = None
         # Outdated overlay toggle (project mode): whether `O` annotations are showing.
         self._outdated_on = False
+        # True only when the active dir has no pyproject.toml (LoadStatus.NOT_A_PROJECT)
+        # — the sole state where `uv init` (the `n` action) can succeed.
+        self._not_a_project = False
 
     @property
     def active_dir(self) -> Path:
@@ -199,9 +202,10 @@ class LazyUvApp(App[None]):
         # `upgrade` is a tool (global) or package (project) op — not a script op.
         if action == "upgrade":
             return True if mode in ("global", "project") else None
-        # `init` only makes sense on the not-a-project screen; uv refuses otherwise.
+        # `init` only makes sense when there's no pyproject.toml at all; uv refuses
+        # otherwise (incl. a MALFORMED pyproject, which also leaves project None).
         if action == "init":
-            return True if (mode == "project" and self.project is None) else None
+            return True if (mode == "project" and self._not_a_project) else None
         return True
 
     def on_mount(self) -> None:
@@ -227,6 +231,11 @@ class LazyUvApp(App[None]):
         # A workspace keeps one lockfile at the root; a focused member has none, so
         # read the lock from the workspace root to resolve the member's deps.
         result = load_project(self.active_dir, lock_root=self.root)
+        # `init` is offered ONLY when there's genuinely no pyproject.toml — a MALFORMED
+        # one also leaves project None but `uv init` would refuse it. Track the status
+        # (not just project-is-None) and refresh the footer whenever it changes.
+        self._not_a_project = result.status is LoadStatus.NOT_A_PROJECT
+        self.refresh_bindings()
         details = self.query_one(DetailsPanel)
         if result.status is LoadStatus.NOT_A_PROJECT:
             self._clear_project_panels()
@@ -774,7 +783,7 @@ class LazyUvApp(App[None]):
 
     def action_init(self) -> None:
         """Bootstrap a project with `uv init` when the cwd isn't one yet."""
-        if self.mode != "project" or self.project is not None:
+        if self.mode != "project" or not self._not_a_project:
             return
         if self._busy:
             self.bell()

@@ -1,6 +1,6 @@
 # Milestone 5 — Inline Scripts (PEP 723) — Design Spec
 
-**Date:** 2026-07-24
+**Date:** 2026-07-23
 **Status:** Implemented
 **Follows:** v1 → M2 → M3 → M4 (`2026-07-23-workspaces-advanced-deps-design.md`).
 Implements ROADMAP "Milestone 5 — Inline scripts (PEP 723)".

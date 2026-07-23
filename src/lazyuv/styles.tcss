@@ -23,8 +23,8 @@ Screen {
 #environment { height: auto; min-height: 5; }
 #dependencies { height: 1fr; min-height: 5; }
 #scripts { height: 40%; }
-#tools { height: 1fr; min-height: 5; }
-#cache { height: auto; min-height: 6; }
+#tools { height: 1fr; }
+#cache { height: auto; }
 
 DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel, EnvironmentPanel,
 ToolsPanel, CachePanel {

@@ -94,6 +94,24 @@ class LazyUvApp(App[None]):
                 yield OutputPanel()
         yield Footer()
 
+    # Actions available only in one mode; used by check_action to make the footer
+    # context-sensitive (inapplicable keys are hidden rather than shown as live).
+    _GLOBAL_ACTIONS = frozenset({
+        "tool_install", "tool_upgrade", "tool_upgrade_all", "tool_uninstall",
+        "cache_clean", "cache_prune", "cache_size", "self_update",
+    })
+    _PROJECT_ACTIONS = frozenset({
+        "add", "remove", "sync", "sync_options", "lock", "run", "python",
+        "venv", "filter",
+    })
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action in self._GLOBAL_ACTIONS:
+            return True if self.global_mode else None
+        if action in self._PROJECT_ACTIONS:
+            return None if self.global_mode else True
+        return True
+
     def on_mount(self) -> None:
         self.query_one("#global-panels").display = False
         self.refresh_project()
@@ -154,23 +172,34 @@ class LazyUvApp(App[None]):
         self.sub_title = " · ".join(parts)
 
     async def _refresh_global(self) -> None:
-        """Populate the Tools + Cache panels from `uv` (guarded by `_busy`)."""
+        """Populate the Tools + Cache panels and uv version from `uv`.
+
+        Caller must have set `_busy = True`; this resets it in `finally`. These are
+        global (machine) queries, so no `cwd` is passed. Failures are surfaced on the
+        Output panel (like the Python-list read), not silently swallowed.
+        """
         output = self.query_one(OutputPanel)
         try:
-            code, out = await commands.run_capture(
-                commands.build_tool_list(), cwd=self.root
-            )
-            self.tools = parse_tool_list(out) if code == 0 else []
-            _dir_code, dir_out = await commands.run_capture(commands.build_cache_dir())
-            self.cache_dir = dir_out.strip() or None
+            code, out = await commands.run_capture(commands.build_tool_list())
+            if code != 0:
+                output.line(f"`uv tool list` failed (exit {code})")
+                self.tools = []
+            else:
+                self.tools = parse_tool_list(out)
+            dir_code, dir_out = await commands.run_capture(commands.build_cache_dir())
+            self.cache_dir = dir_out.strip() if dir_code == 0 and dir_out.strip() else None
+            ver_code, ver_out = await commands.run_capture(commands.build_uv_version())
+            if ver_code == 0:
+                self.uv_version = parse_uv_version(ver_out)
         except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
             output.line(f"error: {exc}")
-            output.finish(1)
-            return
+            self.tools = []
+            self.cache_dir = None
         finally:
             self._busy = False
         self.query_one(ToolsPanel).load(self.tools)
         self.query_one(CachePanel).show(self.cache_dir, None)
+        self._update_subtitle()
 
     # --- selection wiring --------------------------------------------------
 
@@ -212,16 +241,16 @@ class LazyUvApp(App[None]):
             output.line(f"error: {exc}")
             output.finish(1)
         finally:
-            self._busy = False
             # Re-read whichever view is showing so it reflects the mutation.
+            # In global mode we keep `_busy` True and hand off directly to
+            # `_refresh_global`, which clears it in its own `finally` once the
+            # re-read completes — never leaving a window where `_busy` is False
+            # mid-transition (which would let a second mutation start concurrently).
             if self.global_mode:
-                self.run_worker(self._refresh_global_after_mutation())
+                self.run_worker(self._refresh_global())
             else:
+                self._busy = False
                 self.refresh_project()
-
-    async def _refresh_global_after_mutation(self) -> None:
-        self._busy = True
-        await self._refresh_global()
 
     # --- actions -----------------------------------------------------------
 
@@ -374,16 +403,22 @@ class LazyUvApp(App[None]):
     # --- global mode (tools / cache / self) --------------------------------
 
     def action_toggle_mode(self) -> None:
+        if self._busy:
+            self.bell()
+            return
         self.global_mode = not self.global_mode
         self.query_one("#project-panels").display = not self.global_mode
         self.query_one("#global-panels").display = self.global_mode
         self._update_subtitle()
+        self.refresh_bindings()  # footer shows only the active mode's keys
+        # Move focus into the newly-visible column; otherwise focus stays on a
+        # now-hidden widget and arrow keys reach nothing until the user Tabs/clicks.
         if self.global_mode:
-            # Read tools + cache dir on entry; guarded by _busy like the picker.
-            if not self._busy:
-                self._busy = True
-                self.run_worker(self._refresh_global())
+            self.set_focus(self.query_one(ToolsPanel))
+            self._busy = True
+            self.run_worker(self._refresh_global())
         else:
+            self.set_focus(self.query_one(DependenciesPanel))
             self.refresh_project()
 
     def action_tool_install(self) -> None:
@@ -439,15 +474,22 @@ class LazyUvApp(App[None]):
     def action_cache_size(self) -> None:
         if not self.global_mode or self.cache_dir is None:
             return
+        if self._busy:
+            self.bell()  # a mutation/read is in flight — don't race a walk against it
+            return
+        self._busy = True
         self.query_one(CachePanel).show(self.cache_dir, "calculating…")
         self.run_worker(self._compute_cache_size())
 
     async def _compute_cache_size(self) -> None:
         cache_dir = self.cache_dir
-        if cache_dir is None:
-            return
-        size = await asyncio.to_thread(directory_size, Path(cache_dir))
-        self.query_one(CachePanel).show(cache_dir, format_size(size))
+        try:
+            if cache_dir is None:
+                return
+            size = await asyncio.to_thread(directory_size, Path(cache_dir))
+            self.query_one(CachePanel).show(cache_dir, format_size(size))
+        finally:
+            self._busy = False
 
     def action_self_update(self) -> None:
         if not self.global_mode:

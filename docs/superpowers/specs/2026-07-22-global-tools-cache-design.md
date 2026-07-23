@@ -40,24 +40,24 @@ from `uv` via the M2 `run_capture` seam, plus one filesystem walk for cache size
 
 - **Tools** — `uv tool list`. **uv emits plain text, not JSON** (verified: no
   `--output-format`). Format is one tool per block:
-  ```
+  ```text
   <name> v<version>
   - <executable>
   - <executable>
   ```
   `parse_tool_list(output)` parses this into `Tool` rows (see Model). Lines that
-  match neither shape (e.g. "No tools installed.") are ignored → empty list.
+  match neither shape (e.g. "No tools installed") are ignored → empty list.
 - **uv version** — `uv --version` → `"uv 0.11.31 (Homebrew 2026-… )"`;
   `parse_uv_version(output)` extracts `"0.11.31"` (falls back to the raw string).
-- **Cache dir / tool dir** — `uv cache dir`, `uv tool dir` → a single path line.
+- **Cache dir** — `uv cache dir` → a single path line.
 - **Cache size** — `directory_size(path)` walks the dir summing file sizes
-  (`os.walk`, `os.stat`), tolerant of unreadable entries; run in a worker, formatted
-  by `format_size(n)` (B/KiB/MiB/GiB). This is a *read*, so it lives in `data.py`, not
-  `commands.py`.
+  (`os.walk` + `lstat`, so symlinks aren't followed/double-counted), tolerant of
+  unreadable entries; run in a worker, formatted by `format_size(n)`
+  (B/KiB/MiB/GiB/TiB). This is a *read*, so it lives in `data.py`, not `commands.py`.
 
 ## Model (`models.py`)
 
-```
+```python
 @dataclass(frozen=True, slots=True)
 class Tool:
     name: str                       # e.g. "ruff"
@@ -74,7 +74,7 @@ same way it holds `project`.
 Pure argv builders (unchanged style); all reuse the existing `run_streaming`
 (mutations) and `run_capture` (queries) seams — no new seam needed.
 
-```
+```python
 def build_tool_list()            # ["uv", "tool", "list"]
 def build_tool_install(pkg)      # ["uv", "tool", "install", pkg]
 def build_tool_upgrade(name)     # ["uv", "tool", "upgrade", name]

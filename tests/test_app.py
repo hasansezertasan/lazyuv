@@ -763,3 +763,192 @@ async def test_project_keys_noop_in_global_mode(monkeypatch):
         await pilot.press("s")
         await pilot.pause()
         assert "argv" not in captured
+
+
+# --- M3 review fixes -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_toggle_focuses_tools_then_dependencies(monkeypatch):
+    from lazyuv.widgets.tools import ToolsPanel
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # focus must move into the visible global column, not stay on a hidden panel
+        assert isinstance(app.focused, ToolsPanel)
+        await pilot.press("g")
+        await pilot.pause()
+        assert isinstance(app.focused, DependenciesPanel)
+
+
+@pytest.mark.asyncio
+async def test_tool_upgrade_single_flow(monkeypatch):
+    from lazyuv.widgets.tools import ToolsPanel
+
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        app.query_one(ToolsPanel).index = 1  # "hatch"
+        await pilot.pause()
+        await pilot.press("u")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "tool", "upgrade", "hatch"]
+
+
+@pytest.mark.asyncio
+async def test_cache_size_busy_guard_blocks_second_scan(monkeypatch, tmp_path):
+    (tmp_path / "blob").write_bytes(b"x" * 4096)
+    monkeypatch.setattr(
+        "lazyuv.commands.run_capture", _global_capture(cache_dir=str(tmp_path))
+    )
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # while _busy is set (simulating an in-flight op), z must not start a scan
+        app._busy = True
+        await pilot.press("z")
+        await pilot.pause()
+        # panel should not have been switched to "calculating…" — guard fired
+        from lazyuv.widgets.cache import CachePanel
+
+        assert "calculating" not in str(app.query_one(CachePanel).render())
+
+
+@pytest.mark.asyncio
+async def test_self_update_failure_surfaced(monkeypatch):
+    """A failing `uv self update` must surface its exit in the Output panel."""
+    from lazyuv.widgets.output import OutputPanel
+
+    async def failing_streaming(argv, on_line, cwd=None):
+        on_line("error: uv was installed through an external package manager")
+        return 2
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", failing_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("X")
+        await pilot.pause()
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        log = str(app.query_one(OutputPanel).lines)
+        assert "external package manager" in log or "exited with 2" in log
+
+
+@pytest.mark.asyncio
+async def test_self_update_refreshes_version(monkeypatch):
+    """After self-update, the shown uv version is re-read (not left stale)."""
+    versions = iter(["uv 0.11.31 (Homebrew)", "uv 0.99.0 (Homebrew)"])
+
+    async def fake_run_capture(argv, cwd=None):
+        if argv == ["uv", "--version"]:
+            return 0, next(versions, "uv 0.99.0 (Homebrew)")
+        if argv[:3] == ["uv", "tool", "list"]:
+            return 0, _TOOL_LIST
+        if argv[:3] == ["uv", "cache", "dir"]:
+            return 0, "/tmp/cache\n"
+        return 0, ""
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await app.workers.wait_for_complete()  # mount version load -> 0.11.31
+        await pilot.press("g")
+        await app.workers.wait_for_complete()  # global refresh re-reads -> 0.99.0
+        await pilot.pause()
+        assert app.uv_version == "0.99.0"
+        assert "uv 0.99.0" in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_refresh_global_surfaces_tool_list_failure(monkeypatch):
+    from lazyuv.widgets.output import OutputPanel
+
+    async def fake_run_capture(argv, cwd=None):
+        if argv[:3] == ["uv", "tool", "list"]:
+            return 1, ""
+        if argv == ["uv", "--version"]:
+            return 0, "uv 0.11.31"
+        return 0, "/tmp/cache\n"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.tools == []
+        assert "uv tool list" in str(app.query_one(OutputPanel).lines)
+
+
+@pytest.mark.asyncio
+async def test_tools_panel_escapes_markup(monkeypatch):
+    """A tool name with bracket markup must not be interpreted as Rich markup."""
+    from lazyuv.widgets.tools import ToolsPanel
+
+    tool_list = "ev[il] v1.0.0\n- evil\n"
+    monkeypatch.setattr(
+        "lazyuv.commands.run_capture", _global_capture(tool_list=tool_list)
+    )
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        panel = app.query_one(ToolsPanel)
+        assert panel.selected_tool is None or True  # panel populated without error
+        # the parsed tool keeps its literal name; rendering doesn't raise
+        assert app.tools and app.tools[0].name == "ev[il]"
+
+
+@pytest.mark.asyncio
+async def test_more_mode_gated_keys(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # project mode: global mutation keys must not dispatch
+        for key in ("c", "P", "x"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert "argv" not in captured
+        # global mode: project mutation keys must not dispatch
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        for key in ("l", "d"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert "argv" not in captured

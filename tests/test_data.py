@@ -431,3 +431,32 @@ def test_format_size_units():
     assert format_size(1536) == "1.5 KiB"
     assert format_size(5 * 1024 * 1024) == "5.0 MiB"
     assert format_size(2 * 1024**3) == "2.0 GiB"
+
+
+def test_format_size_boundaries_and_tib():
+    from lazyuv.data import format_size
+
+    # just under 1 MiB must promote to MiB, not show "1024.0 KiB"
+    assert format_size(1024**2 - 1) == "1.0 MiB"
+    assert format_size(1024**3 - 1) == "1.0 GiB"
+    # TiB is supported (no unbounded "GiB" for huge caches)
+    assert format_size(1024**4) == "1.0 TiB"
+    assert format_size(3 * 1024**4) == "3.0 TiB"
+
+
+def test_parse_tool_list_tolerates_extra_spacing():
+    from lazyuv.data import parse_tool_list
+
+    # a future padding change (two spaces) must not silently drop the tool
+    tools = parse_tool_list("ruff  v0.11.31\n- ruff\n")
+    assert len(tools) == 1
+    assert tools[0].name == "ruff" and tools[0].version == "0.11.31"
+
+
+def test_directory_size_on_a_file_is_zero(tmp_path):
+    from lazyuv.data import directory_size
+
+    f = tmp_path / "afile"
+    f.write_bytes(b"x" * 100)
+    # a non-directory path yields 0 (documented "0 if missing/unreadable")
+    assert directory_size(f) == 0

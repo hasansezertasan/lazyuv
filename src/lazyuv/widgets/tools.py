@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.widgets import Label, ListItem, ListView
 
 from lazyuv.models import Tool
@@ -18,7 +19,11 @@ class ToolsPanel(ListView):
         self._tools = tools
         self.clear()
         for tool in tools:
-            self.append(ListItem(Label(f"{tool.name}  {tool.version}")))
+            # Escape: name/version come from parsing `uv tool list` (arbitrary PyPI
+            # package names) — a stray "[" must not be read as Rich markup.
+            self.append(
+                ListItem(Label(f"{escape(tool.name)}  {escape(tool.version)}"))
+            )
 
     @property
     def selected_tool(self) -> Tool | None:

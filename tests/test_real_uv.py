@@ -17,6 +17,7 @@ import pytest
 
 from lazyuv.commands import (
     build_add_script,
+    build_init,
     build_remove_script,
     build_run,
     build_run_script,
@@ -32,6 +33,7 @@ from lazyuv.data import (
     parse_pep723_block,
     parse_tree,
 )
+from lazyuv.models import LoadStatus
 
 pytestmark = pytest.mark.skipif(not uv_available(), reason="uv not on PATH")
 
@@ -170,3 +172,19 @@ def test_real_version_set_exact(tmp_path):
     _skip_only_if_offline(result)
     proj = load_project(tmp_path).project
     assert proj is not None and proj.version == "9.9.9"
+
+
+def test_real_init_app_creates_loadable_project(tmp_path):
+    result = _run(build_init("app"), tmp_path)  # offline
+    assert result.returncode == 0, result.stderr
+    loaded = load_project(tmp_path)
+    assert loaded.status is LoadStatus.OK
+    # uv derives (and PEP 503-normalizes) the name from the directory
+    assert loaded.project.name  # a real, non-empty project name
+
+
+def test_real_init_bare_only_pyproject(tmp_path):
+    result = _run(build_init("bare"), tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "pyproject.toml").is_file()
+    assert not (tmp_path / "main.py").exists()

@@ -35,7 +35,7 @@ ToolsPanel, CachePanel, WorkspacePanel {
 
 #add-dialog, #confirm-dialog, #python-dialog, #sync-dialog,
 #tool-install-dialog, #workspace-dialog, #export-dialog, #script-dialog,
-#run-args-dialog, #tree-dialog, #version-dialog {
+#run-args-dialog, #tree-dialog, #version-dialog, #init-dialog {
     background: $panel;
     border: thick $primary;
     padding: 1 2;

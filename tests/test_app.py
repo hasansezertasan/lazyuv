@@ -2272,3 +2272,106 @@ async def test_version_failure_resets_busy(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert app._busy is False  # not wedged after a failed mutation
+
+
+# --- Milestone 8: uv init from the not-a-project screen --------------------
+
+
+@pytest.mark.asyncio
+async def test_init_gating(tmp_path):
+    # init is live ONLY on the not-a-project screen.
+    app = LazyUvApp(root=tmp_path)  # empty dir -> not a project
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project is None
+        assert app.check_action("init", ()) is True
+
+    app2 = LazyUvApp(root=FIXTURE)  # a real project
+    async with app2.run_test() as pilot:
+        await pilot.pause()
+        assert app2.project is not None
+        assert app2.check_action("init", ()) is None  # uv would refuse anyway
+
+
+@pytest.mark.asyncio
+async def test_init_message_mentions_key(tmp_path):
+    from lazyuv.widgets.details import DetailsPanel
+
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        rendered = str(app.query_one(DetailsPanel).render())
+        assert "uv init" in rendered and "`n`" in rendered
+
+
+@pytest.mark.asyncio
+async def test_init_builds_argv(tmp_path, monkeypatch):
+    from textual.widgets import Input, Select
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#kind", Select).value = "lib"
+        app.screen.query_one("#name", Input).value = "coolpkg"
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "init", "--lib", "--name", "coolpkg"]
+        assert captured["cwd"] == tmp_path
+
+
+@pytest.mark.asyncio
+async def test_init_default_app_no_name(tmp_path, monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.click("#ok")  # defaults: app kind, blank name
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "init", "--app"]
+
+
+@pytest.mark.asyncio
+async def test_init_then_loads_project(tmp_path, monkeypatch):
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        # emulate uv writing a pyproject the read path then loads
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\n"
+            'name = "fresh"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.14"\n'
+            "dependencies = []\n"
+        )
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project is None
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.project is not None and app.project.name == "fresh"
+        assert "fresh" in app.sub_title

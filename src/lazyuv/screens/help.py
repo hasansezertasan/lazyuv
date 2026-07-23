@@ -30,6 +30,7 @@ _HELP = """[b]lazyuv keybindings[/b]
   /                filter dependencies
   o                open / switch an inline script (PEP 723)
   g                toggle project / global mode
+  n                init a project here (when there's no pyproject.toml)
   ?                toggle this help
   q                quit
 

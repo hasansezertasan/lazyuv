@@ -6,6 +6,7 @@ import pytest
 from lazyuv.commands import (
     build_add,
     build_add_script,
+    build_init,
     build_lock,
     build_tree,
     build_version_bump,
@@ -352,3 +353,18 @@ def test_build_version_set():
 def test_build_version_set_guards_leading_dash():
     # The `--` is load-bearing here: without it uv would parse `-1` as an option.
     assert build_version_set("-1") == ["uv", "version", "--", "-1"]
+
+
+def test_build_init_default_app():
+    assert build_init() == ["uv", "init", "--app"]
+    assert build_init("app") == ["uv", "init", "--app"]
+
+
+def test_build_init_lib_and_bare():
+    assert build_init("lib") == ["uv", "init", "--lib"]
+    assert build_init("bare") == ["uv", "init", "--bare"]
+
+
+def test_build_init_with_name():
+    assert build_init("lib", "mylib") == ["uv", "init", "--lib", "--name", "mylib"]
+    assert build_init("app", "") == ["uv", "init", "--app"]

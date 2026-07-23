@@ -32,6 +32,7 @@ from lazyuv.screens.confirm import ConfirmScreen
 from lazyuv.screens.export import ExportScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
+from lazyuv.screens.init import InitScreen
 from lazyuv.screens.python import PythonPickerScreen
 from lazyuv.screens.run_args import RunArgsScreen
 from lazyuv.screens.script_picker import ScriptPickerScreen
@@ -84,6 +85,8 @@ class LazyUvApp(App[None]):
         Binding("O", "outdated", "outdated", key_display="O"),
         Binding("R", "run_args", "run args", key_display="R"),
         Binding("V", "version", "version", key_display="V"),
+        # bootstrap a project when the cwd isn't one yet
+        Binding("n", "init", "init"),
         # `u` upgrades the selected thing in either mode (tool / package)
         Binding("u", "upgrade", "upgrade"),
         # global-mode actions (no-op in project mode)
@@ -196,6 +199,9 @@ class LazyUvApp(App[None]):
         # `upgrade` is a tool (global) or package (project) op — not a script op.
         if action == "upgrade":
             return True if mode in ("global", "project") else None
+        # `init` only makes sense on the not-a-project screen; uv refuses otherwise.
+        if action == "init":
+            return True if (mode == "project" and self.project is None) else None
         return True
 
     def on_mount(self) -> None:
@@ -224,7 +230,10 @@ class LazyUvApp(App[None]):
         details = self.query_one(DetailsPanel)
         if result.status is LoadStatus.NOT_A_PROJECT:
             self._clear_project_panels()
-            details.update("No pyproject.toml here.\nRun `uv init` to start a project.")
+            details.update(
+                "No pyproject.toml here.\n"
+                "Press `n` to run `uv init` and start a project."
+            )
             return
         if result.status is LoadStatus.MALFORMED:
             self._clear_project_panels()
@@ -762,6 +771,22 @@ class LazyUvApp(App[None]):
                 self._run_uv(commands.build_run(target, args))
 
         self.push_screen(RunArgsScreen(target), on_close)
+
+    def action_init(self) -> None:
+        """Bootstrap a project with `uv init` when the cwd isn't one yet."""
+        if self.mode != "project" or self.project is not None:
+            return
+        if self._busy:
+            self.bell()
+            return
+
+        def on_close(result: tuple[str, str] | None) -> None:
+            if result is None:
+                return
+            kind, name = result
+            self._run_uv(commands.build_init(kind, name))
+
+        self.push_screen(InitScreen(self.active_dir.name), on_close)
 
     def action_version(self) -> None:
         """Bump or set the project version (`uv version`)."""

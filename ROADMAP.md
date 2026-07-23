@@ -240,6 +240,9 @@ Lower-priority or design-uncertain items; promoted into a milestone when justifi
 - **`uv version`** — *shipped:* `V` opens a modal to bump (major/minor/patch) or set
   an explicit version via `uv version`; cwd-scoped for workspace members. Design:
   `docs/superpowers/specs/2026-07-23-uv-version-design.md`.
+- **`uv init`** — *shipped:* on the not-a-project screen, `n` opens a modal
+  (app/lib/bare + optional name) that bootstraps a project via `uv init` in the cwd,
+  then loads it. Design: `docs/superpowers/specs/2026-07-23-uv-init-design.md`.
 - **Diff view** — show what a pending `uv lock`/`uv sync` *would* change before
   applying. (Deferred from M6; next up.)
 - **Run scripts with arguments** — *shipped in M6:* `R` prompts for args, `shlex`-split

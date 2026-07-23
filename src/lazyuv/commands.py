@@ -143,6 +143,18 @@ def build_run_script(path: str, args: Sequence[str] = ()) -> list[str]:
     return ["uv", "run", "--script", path, *args]
 
 
+def build_init(kind: str = "app", name: str = "") -> list[str]:
+    """`uv init` to bootstrap a project in the cwd (run with cwd=active_dir).
+
+    `kind` maps to --app (default) / --lib / --bare; `name` overrides the derived
+    (directory) name when non-empty. `--app` is passed explicitly for determinism.
+    """
+    argv = ["uv", "init", {"lib": "--lib", "bare": "--bare"}.get(kind, "--app")]
+    if name:
+        argv += ["--name", name]
+    return argv
+
+
 def build_version_bump(bump: str) -> list[str]:
     """`uv version --bump <kind>` (kind ∈ major/minor/patch/…). cwd-scoped in a
     workspace (verified on uv 0.11.31), so the focused member is targeted by cwd."""

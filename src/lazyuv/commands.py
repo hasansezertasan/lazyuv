@@ -143,6 +143,17 @@ def build_run_script(path: str, args: Sequence[str] = ()) -> list[str]:
     return ["uv", "run", "--script", path, *args]
 
 
+def build_version_bump(bump: str) -> list[str]:
+    """`uv version --bump <kind>` (kind ∈ major/minor/patch/…). cwd-scoped in a
+    workspace (verified on uv 0.11.31), so the focused member is targeted by cwd."""
+    return ["uv", "version", "--bump", bump]
+
+
+def build_version_set(value: str) -> list[str]:
+    """`uv version <VALUE>` — set the project version to an explicit value."""
+    return ["uv", "version", value]
+
+
 def build_python_list() -> list[str]:
     return ["uv", "python", "list", "--output-format", "json"]
 

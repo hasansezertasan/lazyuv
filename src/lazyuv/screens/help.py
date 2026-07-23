@@ -20,6 +20,7 @@ _HELP = """[b]lazyuv keybindings[/b]
   R                run selected script with arguments
   t                dependency tree (uv tree)
   O                toggle outdated overlay (deps with a newer release)
+  V                bump / set the project version (uv version)
   u                upgrade selected package (uv lock --upgrade-package)
   p                manage Python versions
   v                create / recreate the venv

@@ -7,6 +7,7 @@ from lazyuv.commands import (
     build_add,
     build_add_script,
     build_lock,
+    build_tree,
     build_python_install,
     build_python_list,
     build_python_pin,
@@ -59,6 +60,48 @@ def test_build_remove_script():
 
 def test_build_run_script():
     assert build_run_script("demo.py") == ["uv", "run", "--script", "demo.py"]
+
+
+def test_build_run_with_args_no_separator():
+    # Args appended directly, NO `--` (verified: uv passes them through as-is).
+    assert build_run("serve", ["--verbose", "pos"]) == [
+        "uv", "run", "serve", "--verbose", "pos",
+    ]
+
+
+def test_build_run_script_with_args():
+    assert build_run_script("demo.py", ["--name", "two words"]) == [
+        "uv", "run", "--script", "demo.py", "--name", "two words",
+    ]
+
+
+def test_build_run_defaults_to_no_args():
+    assert build_run("serve") == ["uv", "run", "serve"]
+
+
+def test_build_tree_bare():
+    assert build_tree() == ["uv", "tree", "--format", "json", "--frozen"]
+
+
+def test_build_tree_outdated():
+    assert build_tree(outdated=True) == [
+        "uv", "tree", "--format", "json", "--frozen", "--outdated",
+    ]
+
+
+def test_build_tree_not_frozen():
+    assert build_tree(frozen=False) == ["uv", "tree", "--format", "json"]
+
+
+def test_build_tree_scoped_to_package():
+    # uv tree is workspace-global (not cwd-scoped), so a focused member needs --package.
+    assert build_tree(package="alpha") == [
+        "uv", "tree", "--format", "json", "--frozen", "--package", "alpha",
+    ]
+    assert build_tree(outdated=True, package="alpha") == [
+        "uv", "tree", "--format", "json", "--frozen", "--outdated",
+        "--package", "alpha",
+    ]
 
 
 def test_build_add_optional_group():

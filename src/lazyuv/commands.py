@@ -92,8 +92,35 @@ def build_export(
     return argv
 
 
-def build_run(script: str) -> list[str]:
-    return ["uv", "run", script]
+def build_run(script: str, args: Sequence[str] = ()) -> list[str]:
+    # Args are appended directly — NO `--` separator. Verified on uv 0.11.31: uv stops
+    # consuming its own options once the target is seen, so leading-dash args reach the
+    # program; a literal `--` would instead be delivered to the program as an argument.
+    return ["uv", "run", script, *args]
+
+
+def build_tree(
+    *, outdated: bool = False, frozen: bool = True, package: str | None = None
+) -> list[str]:
+    """Build `uv tree --format json` (a read-only query, run via run_capture).
+
+    `--frozen` keeps it read-only (never rewrites the lock). `--outdated` adds a
+    `latest_version` to each node (queries the network for latest releases). The
+    `--format json` experimental notice goes to stderr, which run_capture discards.
+
+    `package` scopes the tree to one workspace member. Unlike other commands, `uv
+    tree` is NOT scoped by cwd — from a member directory it still emits the whole
+    workspace — so a focused non-root member must be targeted with `--package`
+    (verified on uv 0.11.31).
+    """
+    argv = ["uv", "tree", "--format", "json"]
+    if frozen:
+        argv.append("--frozen")
+    if outdated:
+        argv.append("--outdated")
+    if package:
+        argv += ["--package", package]
+    return argv
 
 
 # --- inline scripts (PEP 723) (Milestone 5) --------------------------------
@@ -112,8 +139,8 @@ def build_remove_script(path: str, package: str) -> list[str]:
     return ["uv", "remove", "--script", path, package]
 
 
-def build_run_script(path: str) -> list[str]:
-    return ["uv", "run", "--script", path]
+def build_run_script(path: str, args: Sequence[str] = ()) -> list[str]:
+    return ["uv", "run", "--script", path, *args]
 
 
 def build_python_list() -> list[str]:
@@ -225,7 +252,9 @@ async def run_streaming(
             await process.wait()
 
 
-async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, str]:
+async def run_capture(
+    argv: list[str], cwd: Path | None = None, timeout: float | None = None
+) -> tuple[int, str]:
     """Run `argv` to completion and return (exit_code, stdout).
 
     The read-only counterpart to `run_streaming`: for queries like `uv python list`
@@ -233,6 +262,11 @@ async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, st
     kept OUT of the returned output — a uv warning/progress line on stderr must not
     corrupt the JSON. Like `run_streaming`, the child is terminated and awaited if
     cancelled, so it is never orphaned.
+
+    `timeout` (seconds) bounds a network-dependent query (e.g. `uv tree --outdated`)
+    so a stalled connection can't hang the caller forever: on expiry the child is
+    terminated and `TimeoutError` is raised. `None` (the default) waits indefinitely,
+    preserving the original behavior for the fast local queries.
     """
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -241,8 +275,12 @@ async def run_capture(argv: list[str], cwd: Path | None = None) -> tuple[int, st
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _stderr = await process.communicate()
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout)
         return process.returncode or 0, stdout.decode(errors="replace")
+    except TimeoutError as exc:
+        raise TimeoutError(
+            f"`{' '.join(argv)}` timed out after {timeout:g}s"
+        ) from exc
     finally:
         if process.returncode is None:
             try:

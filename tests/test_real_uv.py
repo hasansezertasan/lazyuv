@@ -18,10 +18,17 @@ import pytest
 from lazyuv.commands import (
     build_add_script,
     build_remove_script,
+    build_run,
     build_run_script,
+    build_tree,
     uv_available,
 )
-from lazyuv.data import load_script, parse_pep723_block
+from lazyuv.data import (
+    load_script,
+    parse_outdated,
+    parse_pep723_block,
+    parse_tree,
+)
 
 pytestmark = pytest.mark.skipif(not uv_available(), reason="uv not on PATH")
 
@@ -103,3 +110,41 @@ def test_real_run_script_executes(tmp_path):
     result = _run(build_run_script("demo.py"), tmp_path)
     assert result.returncode == 0, result.stderr
     assert "lazyuv-marker" in result.stdout
+
+
+# --- Milestone 6: tree / outdated / run-with-args --------------------------
+
+
+def _init_project(tmp_path: Path, *pkgs: str) -> subprocess.CompletedProcess:
+    _run(["uv", "init", "--quiet", "."], tmp_path)
+    return _run(["uv", "add", *pkgs], tmp_path)
+
+
+def test_real_tree_json_parses(tmp_path):
+    _skip_only_if_offline(_init_project(tmp_path, "rich"))
+    result = _run(build_tree(), tmp_path)
+    _skip_only_if_offline(result)
+    forest = parse_tree(result.stdout)
+    assert len(forest) >= 1
+    # rich pulls transitive deps, so the root must have children
+    assert any(node.children for node in forest)
+
+
+def test_real_tree_outdated_surfaces_latest(tmp_path):
+    # Pin an old rich so a newer release is guaranteed to exist.
+    _skip_only_if_offline(_init_project(tmp_path, "rich==13.0.0"))
+    result = _run(build_tree(outdated=True), tmp_path)
+    _skip_only_if_offline(result)
+    outdated = parse_outdated(result.stdout)
+    assert "rich" in outdated
+    assert outdated["rich"] != "13.0.0"
+
+
+def test_real_run_passes_args_without_separator(tmp_path):
+    # No deps -> no resolution/network needed for the run itself.
+    (tmp_path / "main.py").write_text("import sys\nprint('GOT', sys.argv[1:])\n")
+    result = _run(build_run("main.py", ["--verbose", "pos"]), tmp_path)
+    assert result.returncode == 0, result.stderr
+    # args reach the program verbatim, and NO literal "--" was injected
+    assert "GOT ['--verbose', 'pos']" in result.stdout
+    assert "'--'" not in result.stdout

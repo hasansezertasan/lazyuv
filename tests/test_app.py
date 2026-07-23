@@ -1993,3 +1993,25 @@ async def test_help_dialog_fits_content_without_wrapping():
         # and the dialog must stay within the viewport
         dialog = app.screen.query_one("#help-dialog")
         assert dialog.region.width <= 120
+
+
+@pytest.mark.asyncio
+async def test_help_dialog_scrollable_when_taller_than_terminal():
+    # On a short terminal the keybinding list overflows; it must be keyboard-scrollable
+    # (focused scroller) so the bottom is reachable, and still close on escape.
+    from lazyuv.screens.help import HelpScreen
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test(size=(80, 20)) as pilot:
+        await pilot.pause()
+        await pilot.press("question_mark")
+        await pilot.pause()
+        dialog = app.screen.query_one("#help-dialog")
+        assert dialog.show_vertical_scrollbar  # content taller than the viewport
+        before = dialog.scroll_offset.y
+        await pilot.press("pagedown")
+        await pilot.pause()
+        assert dialog.scroll_offset.y > before  # keys actually scroll it
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, HelpScreen)  # still closes

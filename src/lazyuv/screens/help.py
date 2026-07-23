@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -61,8 +61,14 @@ class HelpScreen(ModalScreen[None]):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="help-dialog"):
+        # VerticalScroll (focusable) so the keybinding list is scrollable by keyboard
+        # when it's taller than the terminal; escape/? still close via the bindings.
+        with VerticalScroll(id="help-dialog"):
             yield Static(_HELP)
+
+    def on_mount(self) -> None:
+        # Focus the scroller so arrow / page keys scroll immediately.
+        self.query_one("#help-dialog").focus()
 
     def action_dismiss(self) -> None:
         self.dismiss(None)

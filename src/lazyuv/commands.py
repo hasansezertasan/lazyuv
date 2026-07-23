@@ -98,6 +98,49 @@ def build_venv(python: str | None = None, clear: bool = False) -> list[str]:
     return argv
 
 
+# --- global: tools / cache / self (Milestone 3) ----------------------------
+
+
+def build_tool_list() -> list[str]:
+    return ["uv", "tool", "list"]
+
+
+def build_tool_install(package: str) -> list[str]:
+    return ["uv", "tool", "install", package]
+
+
+def build_tool_upgrade(name: str) -> list[str]:
+    return ["uv", "tool", "upgrade", name]
+
+
+def build_tool_upgrade_all() -> list[str]:
+    return ["uv", "tool", "upgrade", "--all"]
+
+
+def build_tool_uninstall(name: str) -> list[str]:
+    return ["uv", "tool", "uninstall", name]
+
+
+def build_cache_dir() -> list[str]:
+    return ["uv", "cache", "dir"]
+
+
+def build_cache_clean() -> list[str]:
+    return ["uv", "cache", "clean"]
+
+
+def build_cache_prune() -> list[str]:
+    return ["uv", "cache", "prune"]
+
+
+def build_uv_version() -> list[str]:
+    return ["uv", "--version"]
+
+
+def build_self_update() -> list[str]:
+    return ["uv", "self", "update"]
+
+
 def uv_available() -> bool:
     """True if the `uv` binary is on PATH."""
     return shutil.which("uv") is not None

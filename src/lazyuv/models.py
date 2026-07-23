@@ -36,6 +36,15 @@ class Script:
 
 
 @dataclass(frozen=True, slots=True)
+class Tool:
+    """A globally-installed uv tool (from `uv tool list`)."""
+
+    name: str                     # e.g. "ruff"
+    version: str                  # e.g. "0.11.31" ("" if unparsable)
+    executables: tuple[str, ...] = ()  # exposed commands, e.g. ("ruff",)
+
+
+@dataclass(frozen=True, slots=True)
 class Environment:
     """The project's Python/venv state, read from files (no subprocess).
 

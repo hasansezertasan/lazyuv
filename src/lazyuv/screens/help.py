@@ -20,8 +20,20 @@ _HELP = """[b]lazyuv keybindings[/b]
   p                manage Python versions
   v                create / recreate the venv
   /                filter dependencies
+  g                toggle project / global mode
   ?                toggle this help
   q                quit
+
+[b]global mode[/b]
+
+  i                install a tool
+  u                upgrade selected tool
+  U                upgrade all tools
+  x                uninstall selected tool
+  c                clean the cache
+  P                prune the cache
+  z                compute cache size
+  X                uv self update
 
 Press ? or Escape to close."""
 

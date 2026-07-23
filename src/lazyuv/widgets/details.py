@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.widgets import Static
 
-from lazyuv.models import Dependency, Script
+from lazyuv.models import Dependency, Script, Tool
 
 
 class DetailsPanel(Static):
@@ -28,3 +29,11 @@ class DetailsPanel(Static):
 
     def show_script(self, script: Script) -> None:
         self.update(f"[b]{script.name}[/b]\ntarget: {script.target}")
+
+    def show_tool(self, tool: Tool) -> None:
+        # Escape uv-sourced strings so bracketed names don't render as markup.
+        executables = escape(", ".join(tool.executables)) or "—"
+        self.update(
+            f"[b]{escape(tool.name)}[/b]  {escape(tool.version)}\n"
+            f"executables: {executables}"
+        )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -11,19 +12,29 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Header, ListView, Tree
 
 from lazyuv import commands
-from lazyuv.data import load_project, parse_python_list
-from lazyuv.models import LoadStatus, Project
+from lazyuv.data import (
+    directory_size,
+    format_size,
+    load_project,
+    parse_python_list,
+    parse_tool_list,
+    parse_uv_version,
+)
+from lazyuv.models import LoadStatus, Project, Tool
 from lazyuv.screens.add_dependency import AddDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
 from lazyuv.screens.python import PythonPickerScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
+from lazyuv.screens.tool_install import ToolInstallScreen
+from lazyuv.widgets.cache import CachePanel
 from lazyuv.widgets.dependencies import DependenciesPanel
 from lazyuv.widgets.details import DetailsPanel
 from lazyuv.widgets.environment import EnvironmentPanel
 from lazyuv.widgets.output import OutputPanel
 from lazyuv.widgets.scripts import ScriptsPanel
+from lazyuv.widgets.tools import ToolsPanel
 
 STYLES = Path(__file__).parent / "styles.tcss"
 
@@ -44,6 +55,16 @@ class LazyUvApp(App[None]):
         Binding("p", "python", "python"),
         Binding("v", "venv", "venv"),
         Binding("slash", "filter", "filter", key_display="/"),
+        Binding("g", "toggle_mode", "global"),
+        # global-mode actions (no-op in project mode)
+        Binding("i", "tool_install", "install tool"),
+        Binding("u", "tool_upgrade", "upgrade"),
+        Binding("U", "tool_upgrade_all", "upgrade all", key_display="U"),
+        Binding("x", "tool_uninstall", "uninstall"),
+        Binding("c", "cache_clean", "cache clean"),
+        Binding("P", "cache_prune", "prune", key_display="P"),
+        Binding("z", "cache_size", "cache size"),
+        Binding("X", "self_update", "uv update", key_display="X"),
     ]
 
     def __init__(self, root: Path | None = None) -> None:
@@ -52,21 +73,57 @@ class LazyUvApp(App[None]):
         self.project: Project | None = None
         self._busy = False
         self._filter_text = ""
+        self.global_mode = False
+        self.tools: list[Tool] = []
+        self.cache_dir: str | None = None
+        self.uv_version: str = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="body"):
             with Vertical(id="left"):
-                yield EnvironmentPanel()
-                yield DependenciesPanel()
-                yield ScriptsPanel()
+                with Vertical(id="project-panels"):
+                    yield EnvironmentPanel()
+                    yield DependenciesPanel()
+                    yield ScriptsPanel()
+                with Vertical(id="global-panels"):
+                    yield ToolsPanel()
+                    yield CachePanel()
             with Vertical(id="right"):
                 yield DetailsPanel()
                 yield OutputPanel()
         yield Footer()
 
+    # Actions available only in one mode; used by check_action to make the footer
+    # context-sensitive (inapplicable keys are hidden rather than shown as live).
+    _GLOBAL_ACTIONS = frozenset({
+        "tool_install", "tool_upgrade", "tool_upgrade_all", "tool_uninstall",
+        "cache_clean", "cache_prune", "cache_size", "self_update",
+    })
+    _PROJECT_ACTIONS = frozenset({
+        "add", "remove", "sync", "sync_options", "lock", "run", "python",
+        "venv", "filter",
+    })
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action in self._GLOBAL_ACTIONS:
+            return True if self.global_mode else None
+        if action in self._PROJECT_ACTIONS:
+            return None if self.global_mode else True
+        return True
+
     def on_mount(self) -> None:
+        self.query_one("#global-panels").display = False
         self.refresh_project()
+        self.run_worker(self._load_uv_version())
+
+    async def _load_uv_version(self) -> None:
+        try:
+            _code, out = await commands.run_capture(commands.build_uv_version())
+        except Exception:  # noqa: BLE001 - version indicator is best-effort
+            return
+        self.uv_version = parse_uv_version(out)
+        self._update_subtitle()
 
     # --- loading -----------------------------------------------------------
 
@@ -83,7 +140,7 @@ class LazyUvApp(App[None]):
             return
 
         self.project = result.project
-        self.sub_title = f"{self.project.name} {self.project.version}"
+        self._update_subtitle()
         panel = self.query_one(DependenciesPanel)
         previous = panel.selected_dependency
         panel.set_filter(self._filter_text, self.project.dependencies)
@@ -99,10 +156,50 @@ class LazyUvApp(App[None]):
     def _clear_project_panels(self) -> None:
         """Reset project-scoped views so a lost/invalid project shows no stale data."""
         self.project = None
-        self.sub_title = ""
+        self._update_subtitle()
         self.query_one(DependenciesPanel).set_filter(self._filter_text, [])
         self.query_one(ScriptsPanel).load([])
         self.query_one(EnvironmentPanel).show(None)
+
+    def _update_subtitle(self) -> None:
+        parts: list[str] = []
+        if self.global_mode:
+            parts.append("global")
+        elif self.project is not None:
+            parts.append(f"{self.project.name} {self.project.version}")
+        if self.uv_version:
+            parts.append(f"uv {self.uv_version}")
+        self.sub_title = " · ".join(parts)
+
+    async def _refresh_global(self) -> None:
+        """Populate the Tools + Cache panels and uv version from `uv`.
+
+        Caller must have set `_busy = True`; this resets it in `finally`. These are
+        global (machine) queries, so no `cwd` is passed. Failures are surfaced on the
+        Output panel (like the Python-list read), not silently swallowed.
+        """
+        output = self.query_one(OutputPanel)
+        try:
+            code, out = await commands.run_capture(commands.build_tool_list())
+            if code != 0:
+                output.line(f"`uv tool list` failed (exit {code})")
+                self.tools = []
+            else:
+                self.tools = parse_tool_list(out)
+            dir_code, dir_out = await commands.run_capture(commands.build_cache_dir())
+            self.cache_dir = dir_out.strip() if dir_code == 0 and dir_out.strip() else None
+            ver_code, ver_out = await commands.run_capture(commands.build_uv_version())
+            if ver_code == 0:
+                self.uv_version = parse_uv_version(ver_out)
+        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+            output.line(f"error: {exc}")
+            self.tools = []
+            self.cache_dir = None
+        finally:
+            self._busy = False
+        self.query_one(ToolsPanel).load(self.tools)
+        self.query_one(CachePanel).show(self.cache_dir, None)
+        self._update_subtitle()
 
     # --- selection wiring --------------------------------------------------
 
@@ -112,9 +209,15 @@ class LazyUvApp(App[None]):
             self.query_one(DetailsPanel).show_dependency(dep)
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
-        script = self.query_one(ScriptsPanel).selected_script
-        if script is not None:
-            self.query_one(DetailsPanel).show_script(script)
+        # Both ScriptsPanel and ToolsPanel are ListViews; route by widget id.
+        if event.list_view.id == "tools":
+            tool = self.query_one(ToolsPanel).selected_tool
+            if tool is not None:
+                self.query_one(DetailsPanel).show_tool(tool)
+        else:
+            script = self.query_one(ScriptsPanel).selected_script
+            if script is not None:
+                self.query_one(DetailsPanel).show_script(script)
 
     # --- command execution -------------------------------------------------
 
@@ -138,8 +241,16 @@ class LazyUvApp(App[None]):
             output.line(f"error: {exc}")
             output.finish(1)
         finally:
-            self._busy = False
-            self.refresh_project()
+            # Re-read whichever view is showing so it reflects the mutation.
+            # In global mode we keep `_busy` True and hand off directly to
+            # `_refresh_global`, which clears it in its own `finally` once the
+            # re-read completes — never leaving a window where `_busy` is False
+            # mid-transition (which would let a second mutation start concurrently).
+            if self.global_mode:
+                self.run_worker(self._refresh_global())
+            else:
+                self._busy = False
+                self.refresh_project()
 
     # --- actions -----------------------------------------------------------
 
@@ -147,18 +258,24 @@ class LazyUvApp(App[None]):
         self.push_screen(HelpScreen())
 
     def action_sync(self) -> None:
+        if self.global_mode:
+            return
         self._run_uv(commands.build_sync())
 
     def action_lock(self) -> None:
+        if self.global_mode:
+            return
         self._run_uv(commands.build_lock())
 
     def action_run(self) -> None:
+        if self.global_mode:
+            return
         script = self.query_one(ScriptsPanel).selected_script
         if script is not None:
             self._run_uv(commands.build_run(script.name))
 
     def action_add(self) -> None:
-        if self.project is None:
+        if self.global_mode or self.project is None:
             return
 
         def on_close(result: tuple[list[str], str, str] | None) -> None:
@@ -169,6 +286,8 @@ class LazyUvApp(App[None]):
         self.push_screen(AddDependencyScreen(self.project.groups), on_close)
 
     def action_remove(self) -> None:
+        if self.global_mode:
+            return
         dep = self.query_one(DependenciesPanel).selected_dependency
         if dep is None:
             return
@@ -180,7 +299,7 @@ class LazyUvApp(App[None]):
         self.push_screen(ConfirmScreen(f"Remove {dep.name}?"), on_close)
 
     def action_sync_options(self) -> None:
-        if self.project is None:
+        if self.global_mode or self.project is None:
             return
         if self._busy:
             self.bell()
@@ -200,6 +319,8 @@ class LazyUvApp(App[None]):
 
     def action_python(self) -> None:
         """Read `uv python list` (a query, not an action), then open the picker."""
+        if self.global_mode:
+            return
         if self._busy:
             self.bell()
             return
@@ -245,7 +366,7 @@ class LazyUvApp(App[None]):
         self.push_screen(PythonPickerScreen(versions), on_close)
 
     def action_venv(self) -> None:
-        if self.project is None:
+        if self.global_mode or self.project is None:
             return
         if self._busy:
             self.bell()
@@ -268,7 +389,7 @@ class LazyUvApp(App[None]):
             recreate(True)
 
     def action_filter(self) -> None:
-        if self.project is None:
+        if self.global_mode or self.project is None:
             return
 
         def on_close(text: str | None) -> None:
@@ -278,6 +399,107 @@ class LazyUvApp(App[None]):
             self.query_one(DependenciesPanel).set_filter(text, self.project.dependencies)
 
         self.push_screen(FilterScreen(self._filter_text), on_close)
+
+    # --- global mode (tools / cache / self) --------------------------------
+
+    def action_toggle_mode(self) -> None:
+        if self._busy:
+            self.bell()
+            return
+        self.global_mode = not self.global_mode
+        self.query_one("#project-panels").display = not self.global_mode
+        self.query_one("#global-panels").display = self.global_mode
+        self._update_subtitle()
+        self.refresh_bindings()  # footer shows only the active mode's keys
+        # Move focus into the newly-visible column; otherwise focus stays on a
+        # now-hidden widget and arrow keys reach nothing until the user Tabs/clicks.
+        if self.global_mode:
+            self.set_focus(self.query_one(ToolsPanel))
+            self._busy = True
+            self.run_worker(self._refresh_global())
+        else:
+            self.set_focus(self.query_one(DependenciesPanel))
+            self.refresh_project()
+
+    def action_tool_install(self) -> None:
+        if not self.global_mode or self._busy:
+            return
+
+        def on_close(package: str | None) -> None:
+            if package:
+                self._run_uv(commands.build_tool_install(package))
+
+        self.push_screen(ToolInstallScreen(), on_close)
+
+    def action_tool_upgrade(self) -> None:
+        if not self.global_mode:
+            return
+        tool = self.query_one(ToolsPanel).selected_tool
+        if tool is not None:
+            self._run_uv(commands.build_tool_upgrade(tool.name))
+
+    def action_tool_upgrade_all(self) -> None:
+        if not self.global_mode:
+            return
+        self._run_uv(commands.build_tool_upgrade_all())
+
+    def action_tool_uninstall(self) -> None:
+        if not self.global_mode:
+            return
+        tool = self.query_one(ToolsPanel).selected_tool
+        if tool is None:
+            return
+
+        def on_close(confirmed: bool) -> None:
+            if confirmed:
+                self._run_uv(commands.build_tool_uninstall(tool.name))
+
+        self.push_screen(ConfirmScreen(f"Uninstall {tool.name}?"), on_close)
+
+    def action_cache_clean(self) -> None:
+        if not self.global_mode:
+            return
+
+        def on_close(confirmed: bool) -> None:
+            if confirmed:
+                self._run_uv(commands.build_cache_clean())
+
+        self.push_screen(ConfirmScreen("Clean the entire uv cache?"), on_close)
+
+    def action_cache_prune(self) -> None:
+        if not self.global_mode:
+            return
+        self._run_uv(commands.build_cache_prune())
+
+    def action_cache_size(self) -> None:
+        if not self.global_mode or self.cache_dir is None:
+            return
+        if self._busy:
+            self.bell()  # a mutation/read is in flight — don't race a walk against it
+            return
+        self._busy = True
+        self.query_one(CachePanel).show(self.cache_dir, "calculating…")
+        self.run_worker(self._compute_cache_size())
+
+    async def _compute_cache_size(self) -> None:
+        cache_dir = self.cache_dir
+        try:
+            if cache_dir is None:
+                return
+            size = await asyncio.to_thread(directory_size, Path(cache_dir))
+            self.query_one(CachePanel).show(cache_dir, format_size(size))
+        finally:
+            self._busy = False
+
+    def action_self_update(self) -> None:
+        if not self.global_mode:
+            return
+
+        def on_close(confirmed: bool) -> None:
+            if confirmed:
+                self._run_uv(commands.build_self_update())
+
+        self.push_screen(ConfirmScreen("Run `uv self update`?"), on_close)
 
 
 def main() -> None:

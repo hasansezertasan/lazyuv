@@ -32,12 +32,16 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        # --frozen: install exactly from uv.lock and fail if it's out of date.
-        run: uv sync --frozen
+        # --locked: assert uv.lock is in sync with pyproject.toml and fail if not
+        # (a PR that edits pyproject without re-locking is rejected). Note: --frozen
+        # would NOT catch this — it just installs the existing lock as-is.
+        run: uv sync --locked
 
       - name: Lint (ruff)
-        run: uvx ruff check src tests
+        # Pin ruff so a new release can't fail an unchanged commit; bump deliberately.
+        run: uvx ruff@0.15.22 check src tests
 
       - name: Test
-        # uv is on PATH here, so the real-uv contract tests run (not skipped).
-        run: uv run --frozen pytest -q
+        # The env is already synced above; uv is on PATH, so the real-uv contract
+        # tests run (not skipped).
+        run: uv run --no-sync pytest -q

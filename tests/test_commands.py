@@ -5,13 +5,16 @@ import pytest
 
 from lazyuv.commands import (
     build_add,
+    build_add_script,
     build_lock,
     build_python_install,
     build_python_list,
     build_python_pin,
     build_python_uninstall,
     build_remove,
+    build_remove_script,
     build_run,
+    build_run_script,
     build_sync,
     build_venv,
     run_capture,
@@ -34,6 +37,28 @@ def test_build_add_dev():
     assert build_add(["pytest"], group="dev", kind="dev") == [
         "uv", "add", "--dev", "pytest",
     ]
+
+
+def test_build_add_script_single():
+    assert build_add_script("demo.py", ["requests"]) == [
+        "uv", "add", "--script", "demo.py", "requests",
+    ]
+
+
+def test_build_add_script_multiple_preserves_spec():
+    assert build_add_script("scripts/x.py", ["rich>=13", "idna"]) == [
+        "uv", "add", "--script", "scripts/x.py", "rich>=13", "idna",
+    ]
+
+
+def test_build_remove_script():
+    assert build_remove_script("demo.py", "rich") == [
+        "uv", "remove", "--script", "demo.py", "rich",
+    ]
+
+
+def test_build_run_script():
+    assert build_run_script("demo.py") == ["uv", "run", "--script", "demo.py"]
 
 
 def test_build_add_optional_group():

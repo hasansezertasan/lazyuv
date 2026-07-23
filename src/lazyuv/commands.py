@@ -96,6 +96,26 @@ def build_run(script: str) -> list[str]:
     return ["uv", "run", script]
 
 
+# --- inline scripts (PEP 723) (Milestone 5) --------------------------------
+
+# `--script <file>` is the explicit, unambiguous form for all three: it targets a
+# standalone script's inline metadata rather than the CWD project. Verified against
+# uv 0.11.31 (`uv add/remove/run --script <file>`). The path is passed as-is; the app
+# runs these with cwd=active_dir so a relative path resolves.
+
+
+def build_add_script(path: str, packages: list[str]) -> list[str]:
+    return ["uv", "add", "--script", path, *packages]
+
+
+def build_remove_script(path: str, package: str) -> list[str]:
+    return ["uv", "remove", "--script", path, package]
+
+
+def build_run_script(path: str) -> list[str]:
+    return ["uv", "run", "--script", path]
+
+
 def build_python_list() -> list[str]:
     return ["uv", "python", "list", "--output-format", "json"]
 

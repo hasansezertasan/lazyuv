@@ -161,10 +161,26 @@ dependency's source, upgrade a single package, and export a lockfile.
 item (members are a constrained switcher)? How much index/source editing belongs in
 a TUI vs. deferring to `$EDITOR`?
 
-## Milestone 5 — Inline scripts (PEP 723)
+## Milestone 5 — Inline scripts (PEP 723) — *shipped*
 
 **Intent:** support standalone scripts with inline dependency metadata, a distinct
 uv workflow from projects.
+
+*Implemented* (design:
+`docs/superpowers/specs/2026-07-24-inline-scripts-design.md`). Resolves the open
+question in favor of **a mode inside the main app** (not a separate entry point): a
+third top-level mode alongside project and global. `o` opens a **script picker** (a
+bounded, dot-dir-skipping walk of the active dir for `.py` files); choosing a file
+enters **script mode**, which reuses the existing `DependenciesPanel` against the
+file's PEP 723 `# /// script` block (parsed from the file, versions resolved from the
+companion `<file>.lock` when present — read path only, no subprocess). `a` / `d` / `r`
+are reused, branching on mode: `uv add --script`, `uv remove --script`,
+`uv run --script`. `Escape` returns to project mode. Grounded in verified uv 0.11.31
+behavior (block/shebang placement, the `<file>.lock` companion, `--script` on all
+three verbs), with a few real-`uv` end-to-end tests alongside the mocked suite.
+**Deferred** (non-goals): *editing* `requires-python` / `[tool.uv]` tables in the
+block from the TUI (→ `$EDITOR`, matching M4's source/index stance), a separate
+`lazyuv script <file>` CLI, and `uv lock/sync/export --script`.
 
 **Features:** detect/edit PEP 723 `# /// script` blocks, `uv add --script <file>`,
 `uv run <file>`, and manage a script's inline deps the way v1 manages project deps.
@@ -176,7 +192,7 @@ inline metadata instead of `pyproject.toml`.
 run it — all through the same panel vocabulary as project mode.
 
 **Open questions:** is this a mode in the main app, or a separate lightweight entry
-point (`lazyuv script foo.py`)?
+point (`lazyuv script foo.py`)? *Resolved: a mode in the main app.*
 
 ---
 

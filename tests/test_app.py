@@ -1171,3 +1171,201 @@ async def test_workspace_export_gated_in_global(monkeypatch):
         await pilot.press("e")
         await pilot.pause()
         assert not isinstance(app.screen, ExportScreen)
+
+
+# --- Milestone 5: inline scripts (PEP 723) ---------------------------------
+
+_SCRIPT_BLOCK = (
+    "# /// script\n"
+    '# requires-python = ">=3.14"\n'
+    "# dependencies = [\n"
+    '#     "requests>=2.34.2",\n'
+    '#     "rich>=13",\n'
+    "# ]\n"
+    "# ///\n"
+    'print("hello")\n'
+)
+
+
+def _write_script_project(root: Path) -> None:
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "host"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n"
+    )
+    (root / "demo.py").write_text(_SCRIPT_BLOCK)
+
+
+async def _enter_script_mode(pilot, app, tmp_path):
+    # demo.py is the only .py under the host project, so it's the sole (highlighted)
+    # entry in the picker — just confirm the default selection.
+    await pilot.press("o")
+    await pilot.pause()
+    await pilot.click("#ok")
+    await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_open_script_enters_script_mode(tmp_path):
+    from lazyuv.widgets.environment import EnvironmentPanel
+    from lazyuv.widgets.scripts import ScriptsPanel
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.mode == "script"
+        assert str(app.script_path) == "demo.py"
+        assert "script · demo.py" in app.sub_title
+        # deps tree shows the block's deps under the "script" group
+        labels = [
+            str(node.label)
+            for group_node in app.query_one(DependenciesPanel).root.children
+            for node in group_node.children
+        ]
+        assert any("requests" in lb for lb in labels)
+        assert any("rich" in lb for lb in labels)
+        # project-only sub-panels are hidden in script mode
+        assert app.query_one(EnvironmentPanel).display is False
+        assert app.query_one(ScriptsPanel).display is False
+
+
+@pytest.mark.asyncio
+async def test_script_add_builds_script_argv(tmp_path, monkeypatch):
+    from textual.widgets import Input
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        await pilot.press("a")
+        await pilot.pause()
+        app.screen.query_one("#packages", Input).value = "cowsay httpx"
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == [
+            "uv", "add", "--script", "demo.py", "cowsay", "httpx",
+        ]
+        assert captured["cwd"] == tmp_path
+
+
+@pytest.mark.asyncio
+async def test_script_remove_builds_script_argv(tmp_path, monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        app.query_one(DependenciesPanel).restore_selection("script", "rich")
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        await pilot.click("#yes")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "remove", "--script", "demo.py", "rich"]
+
+
+@pytest.mark.asyncio
+async def test_script_run_builds_script_argv(tmp_path, monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        await pilot.press("r")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "run", "--script", "demo.py"]
+        assert captured["cwd"] == tmp_path
+
+
+@pytest.mark.asyncio
+async def test_escape_exits_script_mode(tmp_path):
+    from lazyuv.widgets.environment import EnvironmentPanel
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.mode == "script"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.mode == "project"
+        assert app.script_path is None
+        # project panels are restored
+        assert app.query_one(EnvironmentPanel).display is True
+        # subtitle back to the host project
+        assert "host 0.1.0" in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_mode_gating_check_action(tmp_path):
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # project mode: script-only exit is inert, open_script is live
+        assert app.check_action("exit_script", ()) is None
+        assert app.check_action("open_script", ()) is True
+        # enter script mode: project-only keys inert, script keys live
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.check_action("sync", ()) is None
+        assert app.check_action("workspace", ()) is None
+        assert app.check_action("upgrade", ()) is None
+        assert app.check_action("exit_script", ()) is True
+        assert app.check_action("add", ()) is True
+        assert app.check_action("run", ()) is True
+        # global mode: script keys inert
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.check_action("open_script", ()) is None
+        assert app.check_action("exit_script", ()) is None
+
+
+@pytest.mark.asyncio
+async def test_toggle_global_clears_script_focus(tmp_path):
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.mode == "script"
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.mode == "global"
+        assert app.script_path is None

@@ -14,6 +14,7 @@ from pathlib import Path
 from lazyuv.models import (
     Dependency,
     Environment,
+    InlineScript,
     LoadResult,
     LoadStatus,
     Project,
@@ -293,6 +294,114 @@ def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
     for name in pyproject.get("dependency-groups", {}):
         groups.append((name, "dev" if name == "dev" else "group"))
     return groups
+
+
+# --- inline scripts (PEP 723) read path ------------------------------------
+
+# The reference PEP 723 block regex, matching uv's own writer: a `# /// <type>`
+# line, one or more `#`/`# ...` comment lines, then a closing `# ///` line.
+_PEP723_RE = re.compile(
+    r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
+)
+
+# A bounded walk keeps the picker responsive on large trees; the app logs when hit
+# so a truncated list never reads as "these are all the scripts".
+_SCRIPT_SCAN_CAP = 500
+
+
+def parse_pep723_block(text: str) -> dict | None:
+    """Return the parsed PEP 723 `script` metadata table, or None.
+
+    Extracts the single `# /// script … # ///` block, strips the `# `/`#` comment
+    prefix from each content line, and `tomllib`-parses the result. Returns None
+    when there is no block, MORE THAN ONE block (PEP 723 forbids it), or the content
+    is not valid TOML — every ambiguous case reads as "no inline metadata" rather
+    than raising, so a malformed file is still openable and repairable via uv.
+    """
+    matches = [m for m in _PEP723_RE.finditer(text) if m.group("type") == "script"]
+    if len(matches) != 1:
+        return None
+    content = "".join(
+        line[2:] if line.startswith("# ") else line[1:]
+        for line in matches[0].group("content").splitlines(keepends=True)
+    )
+    try:
+        parsed = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return None
+    return parsed
+
+
+def load_script(path: Path) -> InlineScript | None:
+    """Load a `.py` script's inline metadata into an InlineScript (files only).
+
+    Returns None only when the file cannot be read. A readable file with no PEP 723
+    block yields `has_block=False` and no deps. Declared dependencies are resolved
+    against the companion `<path>.lock` (same shape as uv.lock) when it exists,
+    reusing the project lock reader.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    metadata = parse_pep723_block(text)
+    if metadata is None:
+        return InlineScript(path=str(path), has_block=False)
+
+    resolved = _read_lock(path.with_name(path.name + ".lock"))
+    requirements = metadata.get("dependencies")
+    if not isinstance(requirements, list):
+        requirements = []
+    dependencies: list[Dependency] = []
+    for requirement in requirements:
+        if not isinstance(requirement, str):
+            continue
+        name, spec = split_requirement(requirement)
+        version, source, locked_versions = _resolve_entries(resolved.get(name, []))
+        dependencies.append(
+            Dependency(
+                name=name,
+                spec=spec,
+                group="script",
+                resolved_version=version,
+                source=source,
+                kind="script",
+                locked_versions=locked_versions,
+            )
+        )
+
+    requires_python = metadata.get("requires-python")
+    return InlineScript(
+        path=str(path),
+        requires_python=requires_python if isinstance(requires_python, str) else "",
+        dependencies=dependencies,
+        has_block=True,
+    )
+
+
+def find_scripts(root: Path) -> tuple[list[str], bool]:
+    """Return (sorted relative `.py` paths under `root`, truncated?).
+
+    A bounded walk that skips any path component starting with "." (so `.venv`,
+    `.git`, … are excluded) and stops at `_SCRIPT_SCAN_CAP` files, reporting whether
+    the cap was hit so the caller can note the truncation rather than hide it.
+    """
+    found: list[str] = []
+    truncated = False
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for name in sorted(filenames):
+            if not name.endswith(".py"):
+                continue
+            rel = str((Path(dirpath) / name).relative_to(root))
+            found.append(rel)
+            if len(found) >= _SCRIPT_SCAN_CAP:
+                truncated = True
+                found.sort()
+                return found, truncated
+    found.sort()
+    return found, truncated
 
 
 # --- environment (Python / venv) read path --------------------------------

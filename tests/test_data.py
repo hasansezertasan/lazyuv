@@ -6,10 +6,54 @@ from lazyuv.data import (
     _read_environment,
     _read_pin,
     _read_venv,
+    find_scripts,
     load_project,
+    load_script,
+    parse_pep723_block,
     parse_python_list,
 )
-from lazyuv.models import Dependency, LoadStatus, Project, PythonVersion, Script
+from lazyuv.models import (
+    Dependency,
+    InlineScript,
+    LoadStatus,
+    Project,
+    PythonVersion,
+    Script,
+)
+
+# A uv-written PEP 723 block: shebang above, requires-python + deps, and a nested
+# [[tool.uv.index]] table (matches `uv add --script … --index …` on uv 0.11.31).
+UV_STYLE_SCRIPT = '''\
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "requests>=2.34.2",
+#     "rich>=13",
+# ]
+#
+# [[tool.uv.index]]
+# url = "https://example.com/simple"
+# ///
+print("hello")
+'''
+
+# A companion script lockfile (`<file>.lock`), same [[package]] shape as uv.lock.
+SCRIPT_LOCK = '''\
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[[package]]
+name = "requests"
+version = "2.34.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "rich"
+version = "15.0.0"
+source = { registry = "https://pypi.org/simple" }
+'''
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
 
@@ -604,3 +648,100 @@ def test_member_lock_read_from_workspace_root(tmp_path):
     member = load_project(tmp_path / "packages" / "alpha", lock_root=tmp_path).project
     rich = next(d for d in member.dependencies if d.name == "rich")
     assert rich.resolved_version == "13.7.1"
+
+
+# --- inline scripts (PEP 723) ----------------------------------------------
+
+
+def test_parse_pep723_block_uv_style():
+    meta = parse_pep723_block(UV_STYLE_SCRIPT)
+    assert meta is not None
+    assert meta["requires-python"] == ">=3.14"
+    assert meta["dependencies"] == ["requests>=2.34.2", "rich>=13"]
+    # The nested [[tool.uv.index]] table parses too (not just deps).
+    assert meta["tool"]["uv"]["index"][0]["url"] == "https://example.com/simple"
+
+
+def test_parse_pep723_block_empty_deps():
+    text = "# /// script\n# requires-python = \">=3.14\"\n# dependencies = []\n# ///\nx = 1\n"
+    meta = parse_pep723_block(text)
+    assert meta == {"requires-python": ">=3.14", "dependencies": []}
+
+
+def test_parse_pep723_block_none_when_no_block():
+    assert parse_pep723_block('print("plain")\n') is None
+
+
+def test_parse_pep723_block_none_when_duplicate_blocks():
+    # PEP 723 forbids more than one script block; treat as no metadata (crash-safe).
+    block = "# /// script\n# dependencies = []\n# ///\n"
+    assert parse_pep723_block(block + "x = 1\n" + block) is None
+
+
+def test_parse_pep723_block_none_when_malformed_toml():
+    text = "# /// script\n# dependencies = [unclosed\n# ///\n"
+    assert parse_pep723_block(text) is None
+
+
+def test_load_script_builds_script_group_deps(tmp_path):
+    script = tmp_path / "demo.py"
+    script.write_text(UV_STYLE_SCRIPT)
+    result = load_script(script)
+    assert isinstance(result, InlineScript)
+    assert result.has_block is True
+    assert result.requires_python == ">=3.14"
+    names = {d.name for d in result.dependencies}
+    assert names == {"requests", "rich"}
+    for dep in result.dependencies:
+        assert dep.group == "script"
+        assert dep.kind == "script"
+    requests = next(d for d in result.dependencies if d.name == "requests")
+    assert requests.spec == ">=2.34.2"
+    # No companion lock yet → unresolved.
+    assert requests.resolved_version is None
+
+
+def test_load_script_resolves_versions_from_companion_lock(tmp_path):
+    script = tmp_path / "demo.py"
+    script.write_text(UV_STYLE_SCRIPT)
+    (tmp_path / "demo.py.lock").write_text(SCRIPT_LOCK)
+    result = load_script(script)
+    resolved = {d.name: d.resolved_version for d in result.dependencies}
+    assert resolved == {"requests": "2.34.2", "rich": "15.0.0"}
+
+
+def test_load_script_plain_file_has_no_block(tmp_path):
+    script = tmp_path / "plain.py"
+    script.write_text('print("plain")\n')
+    result = load_script(script)
+    assert result is not None
+    assert result.has_block is False
+    assert result.dependencies == []
+
+
+def test_load_script_missing_file_returns_none(tmp_path):
+    assert load_script(tmp_path / "nope.py") is None
+
+
+def test_find_scripts_skips_dotdirs_and_sorts(tmp_path):
+    (tmp_path / "b.py").write_text("")
+    (tmp_path / "a.py").write_text("")
+    (tmp_path / "note.txt").write_text("")
+    sub = tmp_path / "scripts"
+    sub.mkdir()
+    (sub / "c.py").write_text("")
+    hidden = tmp_path / ".venv" / "lib"
+    hidden.mkdir(parents=True)
+    (hidden / "hidden.py").write_text("")
+    scripts, truncated = find_scripts(tmp_path)
+    assert scripts == ["a.py", "b.py", "scripts/c.py"]
+    assert truncated is False
+
+
+def test_find_scripts_reports_truncation(tmp_path, monkeypatch):
+    monkeypatch.setattr("lazyuv.data._SCRIPT_SCAN_CAP", 3)
+    for i in range(10):
+        (tmp_path / f"s{i}.py").write_text("")
+    scripts, truncated = find_scripts(tmp_path)
+    assert truncated is True
+    assert len(scripts) == 3

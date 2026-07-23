@@ -206,7 +206,7 @@ class LazyUvApp(App[None]):
     })
     _SCRIPT_ONLY_ACTIONS = frozenset({"exit_script"})
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         mode = self.mode
         if action in self._GLOBAL_ACTIONS:
             return True if mode == "global" else None

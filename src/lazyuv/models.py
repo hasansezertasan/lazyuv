@@ -94,15 +94,16 @@ class PythonVersion:
 class DepTreeNode:
     """A node in the transitive dependency graph from `uv tree --format json`.
 
-    Built by resolving each root id and following dependency edges. `latest_version`
-    is set only when the tree was fetched with `--outdated`. `deduped` marks a node
-    that was already expanded elsewhere and is shown once without re-expanding its
-    children (mirrors uv's text de-duplication and bounds shared/cyclic graphs).
+    Built by resolving each root id and following dependency edges. The tree view is
+    purely structural (fetched without `--outdated`); "what's upgradable" is a
+    separate concern surfaced by the outdated overlay on the dependency panel.
+    `deduped` marks a node already expanded elsewhere, shown once without
+    re-expanding its children (mirrors uv's text de-duplication and, together with
+    the tuple `children`, makes cyclic/shared graphs structurally finite).
     """
 
     name: str
     version: str
-    latest_version: str | None = None
     children: tuple[DepTreeNode, ...] = ()
     deduped: bool = False
 

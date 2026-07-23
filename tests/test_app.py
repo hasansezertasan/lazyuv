@@ -1670,3 +1670,247 @@ async def test_tree_no_package_at_workspace_root(tmp_path, monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert "--package" not in captured["argv"]
+
+
+# --- Milestone 6: review-hardening (error paths, overlay lifecycle) ---------
+
+
+@pytest.mark.asyncio
+async def test_outdated_active_empty_shows_zero(monkeypatch):
+    # An active overlay that found nothing must still read "outdated: 0", not look off.
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, json.dumps({"schema": {"version": "preview"}, "roots": [],
+                                  "resolution": {}})
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        assert app._outdated_on is True
+        assert "outdated: 0" in panel.border_title
+
+
+@pytest.mark.asyncio
+async def test_outdated_unparseable_does_not_claim_zero(monkeypatch):
+    # exit 0 but unreadable JSON must surface an error and NOT report "0 outdated".
+    from lazyuv.widgets.output import OutputPanel
+
+    lines = []
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, "not json at all"
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        monkeypatch.setattr(app.query_one(OutputPanel), "line", lines.append)
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app._outdated_on is False
+        assert app.query_one(DependenciesPanel).border_title == "Dependencies"
+        assert any("could not read" in ln for ln in lines)
+        assert not any("with a newer release" in ln for ln in lines)
+
+
+@pytest.mark.asyncio
+async def test_outdated_query_failure_clears_and_resets_busy(monkeypatch):
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 2, ""
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app._outdated_on is False
+        assert app._busy is False  # released so the next action works
+        assert app.query_one(DependenciesPanel).border_title == "Dependencies"
+
+
+@pytest.mark.asyncio
+async def test_tree_unparseable_opens_no_modal(monkeypatch):
+    from lazyuv.screens.tree import DependencyTreeScreen
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, "garbage"
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert not isinstance(app.screen, DependencyTreeScreen)
+        assert app._busy is False
+
+
+@pytest.mark.asyncio
+async def test_run_args_invalid_shlex_surfaced_no_run(monkeypatch):
+    from textual.widgets import Input
+    from lazyuv.widgets.scripts import ScriptsPanel
+
+    ran = []
+    from lazyuv.widgets.output import OutputPanel
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        ran.append(argv)
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.query_one(ScriptsPanel).index = 0
+        await pilot.pause()
+        lines = []
+        monkeypatch.setattr(app.query_one(OutputPanel), "line", lines.append)
+        await pilot.press("R")
+        await pilot.pause()
+        app.screen.query_one("#run-args", Input).value = 'foo "unbalanced'
+        await pilot.press("enter")
+        await pilot.pause()
+        assert ran == []  # no run dispatched
+        assert any("invalid arguments" in ln for ln in lines)
+
+
+@pytest.mark.asyncio
+async def test_run_args_empty_runs_with_no_args(monkeypatch):
+    from textual.widgets import Input
+    from lazyuv.widgets.scripts import ScriptsPanel
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.query_one(ScriptsPanel).index = 0
+        await pilot.pause()
+        await pilot.press("R")
+        await pilot.pause()
+        app.screen.query_one("#run-args", Input).value = "   "  # whitespace only
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "run", "serve"]
+
+
+@pytest.mark.asyncio
+async def test_outdated_cleared_when_entering_script_mode(tmp_path, monkeypatch):
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, _APP_TREE_JSON  # marks httpx outdated
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    _write_script_project(tmp_path)  # host project + demo.py
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app._outdated_on is True
+        # entering script mode must clear the project overlay
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app._outdated_on is False
+        assert app.query_one(DependenciesPanel).border_title == "Dependencies"
+
+
+@pytest.mark.asyncio
+async def test_outdated_cleared_on_workspace_switch(tmp_path, monkeypatch):
+    from textual.widgets import ListView
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            # rich (alpha's dep) is outdated
+            return 0, json.dumps({
+                "schema": {"version": "preview"}, "roots": [{"id": "r"}],
+                "resolution": {"r": {"name": "alpha", "version": "0.1.0",
+                                     "dependencies": [{"id": "rich"}]},
+                               "rich": {"name": "rich", "version": "13.0.0",
+                                        "latest_version": "15.0.0",
+                                        "dependencies": []}},
+            })
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # focus alpha, turn overlay on
+        await pilot.press("w")
+        await pilot.pause()
+        idx = next(i for i, m in enumerate(app.workspace_members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app._outdated_on is True
+        # switching to beta must clear alpha's overlay (no bleed)
+        await pilot.press("w")
+        await pilot.pause()
+        bidx = next(i for i, m in enumerate(app.workspace_members) if m.name == "beta")
+        app.screen.query_one("#workspace-list", ListView).index = bidx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        assert app._outdated_on is False
+        assert app.query_one(DependenciesPanel).border_title == "Dependencies"
+
+
+@pytest.mark.asyncio
+async def test_outdated_scopes_to_focused_member(tmp_path, monkeypatch):
+    from textual.widgets import ListView
+
+    captured = {}
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            captured["argv"] = argv
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        idx = next(i for i, m in enumerate(app.workspace_members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        await pilot.press("O")  # outdated must also scope with --package
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "--package" in captured["argv"]
+        assert captured["argv"][-1] == "alpha"
+        assert "--outdated" in captured["argv"]

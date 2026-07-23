@@ -18,8 +18,11 @@ class DependenciesPanel(Tree):
         self.show_root = False
         self._filter = ""
         self._dependencies: list[Dependency] = []
-        # {canonical_name: latest_version} from `O`; empty when not showing outdated.
+        # {canonical_name: latest_version} from `O`. `_outdated_active` is separate
+        # from the map's contents so an *active* overlay that found nothing still
+        # shows "outdated: 0" rather than looking identical to the off state.
         self._outdated: dict[str, str] = {}
+        self._outdated_active = False
 
     def set_filter(self, text: str, dependencies: list[Dependency]) -> None:
         """Apply a name-substring filter and re-populate."""
@@ -28,8 +31,15 @@ class DependenciesPanel(Tree):
         self._repopulate()
 
     def set_outdated(self, outdated: dict[str, str]) -> None:
-        """Annotate leaves with their latest version (empty dict clears the overlay)."""
+        """Turn the overlay on and annotate leaves with their latest version."""
         self._outdated = outdated
+        self._outdated_active = True
+        self._repopulate()
+
+    def clear_outdated(self) -> None:
+        """Turn the overlay off (no annotations, no count in the title)."""
+        self._outdated = {}
+        self._outdated_active = False
         self._repopulate()
 
     def _latest_for(self, dep: Dependency) -> str | None:
@@ -47,7 +57,7 @@ class DependenciesPanel(Tree):
         title = "Dependencies"
         if self._filter:
             title += f" — filter: {self._filter}"
-        if self._outdated:
+        if self._outdated_active:
             n = sum(1 for d in self._dependencies if self._latest_for(d) is not None)
             title += f" — outdated: {n}"
         self.border_title = title

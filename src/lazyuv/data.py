@@ -647,19 +647,23 @@ def _load_tree_json(output: str) -> dict | None:
     return data
 
 
-def parse_tree(output: str) -> list[DepTreeNode]:
+def parse_tree(output: str) -> list[DepTreeNode] | None:
     """Parse `uv tree --format json` into a de-duplicated DepTreeNode forest.
 
     Resolves each `roots[].id` in `resolution` and follows `dependencies[].id` edges.
     A node id already expanded (tracked in `seen`) is emitted once as a childless
     `deduped` node — mirroring uv's text de-duplication and bounding shared/cyclic
-    graphs; a depth cap is a further backstop. Malformed output, a missing
-    `resolution`, or a dangling edge id degrade gracefully (empty forest / skipped
-    edge) rather than raising.
+    graphs; a depth cap is a further backstop. A dangling edge id is skipped.
+
+    Returns **None** when the output is not the expected shape at all (invalid JSON,
+    or no `resolution` table) — distinct from a valid-but-empty `[]` — so the caller
+    can tell "uv's (experimental-schema) output changed / we couldn't read it" apart
+    from "this project genuinely has no dependency roots", instead of silently showing
+    an empty tree.
     """
     data = _load_tree_json(output)
     if data is None:
-        return []
+        return None
     resolution = data["resolution"]
     seen: set[str] = set()
 
@@ -669,10 +673,8 @@ def parse_tree(output: str) -> list[DepTreeNode]:
             return None  # dangling edge id — skip
         name = node.get("name") or ""
         version = node.get("version") or ""
-        latest = node.get("latest_version")
-        latest_version = latest if isinstance(latest, str) else None
         if node_id in seen or depth >= _TREE_MAX_DEPTH:
-            return DepTreeNode(name, version, latest_version, (), deduped=True)
+            return DepTreeNode(name, version, (), deduped=True)
         seen.add(node_id)
         children: list[DepTreeNode] = []
         edges = node.get("dependencies")
@@ -686,7 +688,7 @@ def parse_tree(output: str) -> list[DepTreeNode]:
                 child = build(child_id, depth + 1)
                 if child is not None:
                     children.append(child)
-        return DepTreeNode(name, version, latest_version, tuple(children))
+        return DepTreeNode(name, version, tuple(children))
 
     roots = data.get("roots")
     forest: list[DepTreeNode] = []
@@ -702,16 +704,20 @@ def parse_tree(output: str) -> list[DepTreeNode]:
     return forest
 
 
-def parse_outdated(output: str) -> dict[str, str]:
+def parse_outdated(output: str) -> dict[str, str] | None:
     """Return {canonical_name: latest_version} for every outdated node.
 
     From `uv tree --outdated --format json`: a node is outdated when its
     `latest_version` is set and differs from `version`. Keyed by canonical name so it
-    matches the declared deps the dependency panel renders. Malformed → {}.
+    matches the declared deps the dependency panel renders.
+
+    Returns **None** when the output can't be read at all (invalid JSON / no
+    `resolution`) — distinct from a valid `{}` meaning "checked, nothing outdated" —
+    so the caller never reports an unreadable response as a reassuring "0 outdated".
     """
     data = _load_tree_json(output)
     if data is None:
-        return {}
+        return None
     outdated: dict[str, str] = {}
     for node in data["resolution"].values():
         if not isinstance(node, dict):

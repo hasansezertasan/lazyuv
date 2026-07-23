@@ -821,7 +821,6 @@ def test_parse_tree_builds_forest_with_edges():
     # the dangling "ghost" edge is skipped, not raised
     assert child_names == ["rich", "idna"]
     rich = root.children[0]
-    assert rich.latest_version == "15.0.0"
     # rich -> pygments, and rich -> rich (deduped, no re-expansion)
     assert [c.name for c in rich.children] == ["pygments", "rich"]
     self_ref = rich.children[1]
@@ -829,9 +828,17 @@ def test_parse_tree_builds_forest_with_edges():
     assert self_ref.children == ()
 
 
-def test_parse_tree_malformed_returns_empty():
-    assert parse_tree("not json") == []
-    assert parse_tree(json.dumps({"roots": [{"id": "x"}]})) == []  # no resolution
+def test_parse_tree_unparseable_returns_none():
+    # None (not []) signals "couldn't read the output", distinct from an empty forest.
+    assert parse_tree("not json") is None
+    assert parse_tree(json.dumps({"roots": [{"id": "x"}]})) is None  # no resolution
+
+
+def test_parse_tree_valid_but_no_roots_is_empty_not_none():
+    # Structurally valid output with no roots is a genuine empty forest, not a failure.
+    payload = json.dumps({"schema": {"version": "preview"}, "roots": [],
+                          "resolution": {}})
+    assert parse_tree(payload) == []
 
 
 def test_parse_outdated_picks_only_newer():
@@ -853,7 +860,12 @@ def test_parse_outdated_canonical_names():
     assert parse_outdated(payload) == {"foo-bar": "2.0"}
 
 
-def test_parse_outdated_malformed_returns_empty():
-    assert parse_outdated("nope") == {}
-    # no --outdated -> no latest_version -> nothing outdated
+def test_parse_outdated_unparseable_returns_none():
+    # None distinguishes "couldn't read the output" from a valid "{}" (nothing outdated),
+    # so the app never reports an unreadable response as a reassuring "0 outdated".
+    assert parse_outdated("nope") is None
+
+
+def test_parse_outdated_valid_but_none_outdated_is_empty_not_none():
+    # no --outdated -> no latest_version -> valid, nothing outdated -> {} (not None)
     assert parse_outdated(_TREE_JSON.replace("latest_version", "x")) == {}

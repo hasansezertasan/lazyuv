@@ -607,6 +607,9 @@ class LazyUvApp(App[None]):
                 return
             self.focused_member = None if member.is_root else member
             self._filter_text = ""
+            # The outdated overlay was computed for the previous member; clear it so
+            # its annotations/count don't bleed onto the newly-focused member's deps.
+            self._clear_outdated()
             self.refresh_project()
 
         focused_dir = self.focused_member.directory if self.focused_member else ""
@@ -666,7 +669,13 @@ class LazyUvApp(App[None]):
         if code != 0:
             output.line(f"`uv tree` failed (exit {code})")
             return
-        self.push_screen(DependencyTreeScreen(parse_tree(out)))
+        forest = parse_tree(out)
+        if forest is None:
+            # exit 0 but unreadable output (e.g. the experimental JSON schema changed)
+            # — surface it rather than opening a misleading empty tree.
+            output.line("could not parse `uv tree` output (unrecognized format)")
+            return
+        self.push_screen(DependencyTreeScreen(forest))
 
     def action_outdated(self) -> None:
         """Toggle the outdated overlay: annotate deps with a newer release available."""
@@ -700,13 +709,18 @@ class LazyUvApp(App[None]):
             self._clear_outdated()
             return
         mapping = parse_outdated(out)
+        if mapping is None:
+            # exit 0 but unreadable output — don't report a reassuring "0 outdated".
+            output.line("could not read `uv tree --outdated` output (unrecognized format)")
+            self._clear_outdated()
+            return
         self._outdated_on = True
         self.query_one(DependenciesPanel).set_outdated(mapping)
         output.line(f"outdated: {len(mapping)} package(s) with a newer release")
 
     def _clear_outdated(self) -> None:
         self._outdated_on = False
-        self.query_one(DependenciesPanel).set_outdated({})
+        self.query_one(DependenciesPanel).clear_outdated()
 
     def action_run_args(self) -> None:
         """Run the selected/focused script with user-supplied arguments."""

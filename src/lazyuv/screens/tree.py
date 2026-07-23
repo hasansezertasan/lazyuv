@@ -36,8 +36,6 @@ class DependencyTreeScreen(ModalScreen[None]):
 
     def _add(self, parent: TreeNode, node: DepTreeNode) -> None:
         label = f"{escape(node.name)} {escape(node.version)}"
-        if node.latest_version and node.latest_version != node.version:
-            label += f" → {escape(node.latest_version)}"
         if node.deduped:
             label += " (*)"
         if node.children:

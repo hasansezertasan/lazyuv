@@ -53,7 +53,7 @@ _HELP = """[b]lazyuv keybindings[/b]
   z                compute cache size
   X                uv self update
 
-Press ? , q , or Escape to close."""
+Press ?, q, or Escape to close."""
 
 
 class HelpScreen(Screen[None]):

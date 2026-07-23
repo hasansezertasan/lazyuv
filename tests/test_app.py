@@ -1990,7 +1990,7 @@ async def test_help_is_fullscreen_page_without_wrapping():
         # a full-screen page: the body spans (nearly) the whole width, and its text
         # region is far wider than the longest line -> no wrap on any normal terminal
         assert body.region.width >= 100
-        assert app.screen.query_one(Static).region.width >= longest
+        assert body.query_one(Static).region.width >= longest
 
 
 @pytest.mark.asyncio

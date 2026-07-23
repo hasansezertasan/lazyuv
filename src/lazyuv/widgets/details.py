@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.markup import escape
 from textual.widgets import Static
 
-from lazyuv.models import Dependency, Script, Tool
+if TYPE_CHECKING:
+    from lazyuv.models import Dependency, Script, Tool
 
 
 class DetailsPanel(Static):

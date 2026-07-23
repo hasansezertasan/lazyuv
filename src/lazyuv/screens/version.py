@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.markup import escape
-from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 # The common bumps; pre-release kinds (alpha/rc/post/…) are reachable via the
 # explicit-value input rather than cluttering the select.
@@ -31,7 +35,9 @@ class VersionScreen(ModalScreen[tuple[str, str] | None]):
             yield Select(
                 [(b, b) for b in _BUMPS], value="patch", id="bump", allow_blank=False
             )
-            yield Input(placeholder="or set an explicit version, e.g. 1.2.3", id="value")
+            yield Input(
+                placeholder="or set an explicit version, e.g. 1.2.3", id="value"
+            )
             yield Button("Apply", variant="primary", id="ok")
             yield Button("Cancel", id="cancel")
 

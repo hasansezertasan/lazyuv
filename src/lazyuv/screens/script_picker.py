@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.markup import escape
-from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ListItem, ListView
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class ScriptPickerScreen(ModalScreen[str | None]):
@@ -31,7 +35,9 @@ class ScriptPickerScreen(ModalScreen[str | None]):
             yield Label("Open inline script")
             if self._scripts:
                 if self._truncated:
-                    yield Label(f"(showing first {len(self._scripts)} — type a path below)")
+                    yield Label(
+                        f"(showing first {len(self._scripts)} — type a path below)"
+                    )
                 items = []
                 initial = 0
                 for index, path in enumerate(self._scripts):

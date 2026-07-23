@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from textual.widgets import Tree
-from textual.widgets.tree import TreeNode
 
 from lazyuv.models import Dependency
+
+if TYPE_CHECKING:
+    from textual.widgets.tree import TreeNode
 
 
 class DependenciesPanel(Tree):
@@ -65,7 +69,8 @@ class DependenciesPanel(Tree):
             # Count only the *visible* (filtered) outdated deps, so the count always
             # matches the annotated leaves the user can actually see.
             n = sum(
-                1 for d in self._dependencies
+                1
+                for d in self._dependencies
                 if self._visible(d) and self._latest_for(d) is not None
             )
             title += f" — outdated: {n}"

@@ -87,7 +87,7 @@ def _read_lock(lock_path: Path) -> dict[str, list[tuple[str, str]]]:
     try:
         with lock_path.open("rb") as fh:
             lock = tomllib.load(fh)
-    except (tomllib.TOMLDecodeError, OSError):
+    except tomllib.TOMLDecodeError, OSError:
         return {}
 
     resolved: dict[str, list[tuple[str, str]]] = {}
@@ -242,7 +242,7 @@ def _read_workspace_members(root: Path, pyproject: dict) -> list[WorkspaceMember
     for pattern in workspace.get("exclude") or []:
         try:
             matches = list(root.glob(pattern))
-        except (ValueError, NotImplementedError, OSError):
+        except ValueError, NotImplementedError, OSError:
             continue  # e.g. "." or an absolute path — skip the bad pattern
         excluded.update(p.resolve() for p in matches)
 
@@ -252,7 +252,7 @@ def _read_workspace_members(root: Path, pyproject: dict) -> list[WorkspaceMember
     for pattern in member_globs:
         try:
             matches = sorted(root.glob(pattern))
-        except (ValueError, NotImplementedError, OSError):
+        except ValueError, NotImplementedError, OSError:
             continue  # e.g. "." or an absolute path — skip the bad pattern
         for path in matches:
             if not path.is_dir() or path.resolve() in excluded:
@@ -269,7 +269,7 @@ def _read_workspace_members(root: Path, pyproject: dict) -> list[WorkspaceMember
             try:
                 with member_pyproject.open("rb") as fh:
                     member_data = tomllib.load(fh)
-            except (tomllib.TOMLDecodeError, OSError):
+            except tomllib.TOMLDecodeError, OSError:
                 continue
             name = member_data.get("project", {}).get("name")
             if not name:
@@ -289,11 +289,13 @@ def _collect_groups(pyproject: dict) -> list[tuple[str, str]]:
     a group with no dependencies yet is still offered as an add target.
     """
     project_table = pyproject.get("project", {})
-    groups: list[tuple[str, str]] = []
-    for name in project_table.get("optional-dependencies", {}):
-        groups.append((name, "extra"))
-    for name in pyproject.get("dependency-groups", {}):
-        groups.append((name, "dev" if name == "dev" else "group"))
+    groups: list[tuple[str, str]] = [
+        (name, "extra") for name in project_table.get("optional-dependencies", {})
+    ]
+    groups.extend(
+        (name, "dev" if name == "dev" else "group")
+        for name in pyproject.get("dependency-groups", {})
+    )
     return groups
 
 
@@ -316,8 +318,15 @@ _SCRIPT_DIR_CAP = 2000
 # Non-hidden directories that are large and never hold a user's own scripts; pruned
 # from the walk (dot-dirs like `.venv`/`.git` are already skipped separately).
 _SCRIPT_SKIP_DIRS = frozenset({
-    "node_modules", "__pycache__", "site-packages", "dist", "build",
-    ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+    "node_modules",
+    "__pycache__",
+    "site-packages",
+    "dist",
+    "build",
+    ".tox",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
 })
 
 
@@ -354,7 +363,7 @@ def load_script(path: Path) -> InlineScript | None:
     """
     try:
         text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         return None
 
     metadata = parse_pep723_block(text)
@@ -412,7 +421,8 @@ def find_scripts(root: Path) -> tuple[list[str], bool]:
             dirnames[:] = []  # stop descending; finish this dir's files then exit
         else:
             dirnames[:] = sorted(
-                d for d in dirnames
+                d
+                for d in dirnames
                 if not d.startswith(".") and d not in _SCRIPT_SKIP_DIRS
             )
         for name in sorted(filenames):
@@ -467,7 +477,7 @@ def _read_venv(cfg_path: Path) -> tuple[str | None, str | None]:
     unreadable file → (None, None).
     """
     try:
-        text = cfg_path.read_text()
+        text = cfg_path.read_text(encoding="utf-8")
     except OSError:
         return None, None
     values: dict[str, str] = {}
@@ -521,10 +531,10 @@ def _compute_drift(
     parts = venv_python.split(".")
     try:
         got = (int(parts[0]), int(parts[1]))
-    except (IndexError, ValueError):
+    except IndexError, ValueError:
         return None
     want = (major, minor)
-    if op in (">=", "~=") and got < want:
+    if op in {">=", "~="} and got < want:
         return f"venv Python {venv_python} below requires-python {requires_python}"
     if op == "==" and got != want:
         return f"venv Python {venv_python} ≠ requires-python {requires_python}"
@@ -562,7 +572,7 @@ def parse_python_list(output: str) -> list[PythonVersion]:
     """
     try:
         entries = json.loads(output)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return []
     if not isinstance(entries, list):
         return []
@@ -640,7 +650,7 @@ def _load_tree_json(output: str) -> dict | None:
     """Parse `uv tree --format json` stdout into its dict, or None if unusable."""
     try:
         data = json.loads(output)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return None
     if not isinstance(data, dict) or not isinstance(data.get("resolution"), dict):
         return None

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Never
 
 import pytest
 
@@ -11,7 +12,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "project"
 
 
 @pytest.mark.asyncio
-async def test_app_loads_project_and_shows_deps():
+async def test_app_loads_project_and_shows_deps() -> None:
     app = LazyUvApp(root=FIXTURE)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -27,10 +28,10 @@ async def test_app_loads_project_and_shows_deps():
 
 
 @pytest.mark.asyncio
-async def test_sync_key_runs_mocked_uv(monkeypatch):
+async def test_sync_key_runs_mocked_uv(monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         on_line("Resolved 4 packages")
         return 0
@@ -47,7 +48,7 @@ async def test_sync_key_runs_mocked_uv(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_not_a_project_shows_hint(tmp_path):
+async def test_not_a_project_shows_hint(tmp_path) -> None:
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -55,10 +56,10 @@ async def test_not_a_project_shows_hint(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_lock_key_runs_mocked_uv(monkeypatch):
+async def test_lock_key_runs_mocked_uv(monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -74,7 +75,7 @@ async def test_lock_key_runs_mocked_uv(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_malformed_pyproject_no_project(tmp_path):
+async def test_malformed_pyproject_no_project(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text("this is = = not toml")
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -83,12 +84,12 @@ async def test_malformed_pyproject_no_project(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_add_flow_runs_mocked_uv(monkeypatch):
+async def test_add_flow_runs_mocked_uv(monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -108,12 +109,12 @@ async def test_add_flow_runs_mocked_uv(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_add_to_optional_extra_routes_optional(monkeypatch):
+async def test_add_to_optional_extra_routes_optional(monkeypatch) -> None:
     from textual.widgets import Input, Select
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -137,7 +138,7 @@ async def test_add_to_optional_extra_routes_optional(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_filter_updates_border_title():
+async def test_filter_updates_border_title() -> None:
     app = LazyUvApp(root=FIXTURE)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -148,7 +149,7 @@ async def test_filter_updates_border_title():
 
 
 @pytest.mark.asyncio
-async def test_selection_preserved_across_refresh():
+async def test_selection_preserved_across_refresh() -> None:
     app = LazyUvApp(root=FIXTURE)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -165,11 +166,12 @@ async def test_selection_preserved_across_refresh():
         await pilot.pause()
         await pilot.pause()
         selected = app.query_one(DependenciesPanel).selected_dependency
-        assert selected is not None and selected.name == "pytest"
+        assert selected is not None
+        assert selected.name == "pytest"
 
 
 @pytest.mark.asyncio
-async def test_forked_dependency_shows_all_versions(tmp_path):
+async def test_forked_dependency_shows_all_versions(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -201,7 +203,7 @@ async def test_forked_dependency_shows_all_versions(tmp_path):
         assert any("0.27.0 / 0.28.1" in lb and "2 versions" in lb for lb in labels)
 
 
-def test_add_dialog_keeps_reserved_name_extras():
+def test_add_dialog_keeps_reserved_name_extras() -> None:
     from lazyuv.screens.add_dependency import AddDependencyScreen
 
     screen = AddDependencyScreen([("dev", "extra"), ("docs", "group")])
@@ -214,7 +216,7 @@ def test_add_dialog_keeps_reserved_name_extras():
 
 
 @pytest.mark.asyncio
-async def test_error_state_clears_stale_panels(tmp_path):
+async def test_error_state_clears_stale_panels(tmp_path) -> None:
     from lazyuv.widgets.scripts import ScriptsPanel
 
     app = LazyUvApp(root=FIXTURE)
@@ -257,7 +259,7 @@ def _write_venv(root: Path, version: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_environment_panel_shows_drift(tmp_path):
+async def test_environment_panel_shows_drift(tmp_path) -> None:
     from lazyuv.widgets.environment import EnvironmentPanel
 
     _write_project(tmp_path)
@@ -275,12 +277,12 @@ async def test_environment_panel_shows_drift(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_sync_options_frozen_builds_argv(monkeypatch):
+async def test_sync_options_frozen_builds_argv(monkeypatch) -> None:
     from textual.widgets import Checkbox
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -298,28 +300,26 @@ async def test_sync_options_frozen_builds_argv(monkeypatch):
         assert captured["argv"] == ["uv", "sync", "--frozen"]
 
 
-_PYTHON_LIST_JSON = json.dumps(
-    [
-        {
-            "key": "cpython-3.14.6-macos-aarch64-none",
-            "version": "3.14.6",
-            "implementation": "cpython",
-            "path": "/home/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
-        },
-        {
-            "key": "cpython-3.12.5-macos-aarch64-none",
-            "version": "3.12.5",
-            "implementation": "cpython",
-            "path": None,
-        },
-        {
-            "key": "cpython-3.11.14-macos-aarch64-none",
-            "version": "3.11.14",
-            "implementation": "cpython",
-            "path": "/opt/homebrew/bin/python3.11",
-        },
-    ]
-)
+_PYTHON_LIST_JSON = json.dumps([
+    {
+        "key": "cpython-3.14.6-macos-aarch64-none",
+        "version": "3.14.6",
+        "implementation": "cpython",
+        "path": "/home/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
+    },
+    {
+        "key": "cpython-3.12.5-macos-aarch64-none",
+        "version": "3.12.5",
+        "implementation": "cpython",
+        "path": None,
+    },
+    {
+        "key": "cpython-3.11.14-macos-aarch64-none",
+        "version": "3.11.14",
+        "implementation": "cpython",
+        "path": "/opt/homebrew/bin/python3.11",
+    },
+])
 
 
 def _fake_capture(_output):
@@ -330,12 +330,12 @@ def _fake_capture(_output):
 
 
 @pytest.mark.asyncio
-async def test_python_picker_install_uses_key(monkeypatch):
+async def test_python_picker_install_uses_key(monkeypatch) -> None:
     from textual.widgets import ListView
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -355,18 +355,21 @@ async def test_python_picker_install_uses_key(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == [
-            "uv", "python", "install", "cpython-3.12.5-macos-aarch64-none",
+            "uv",
+            "python",
+            "install",
+            "cpython-3.12.5-macos-aarch64-none",
         ]
 
 
 @pytest.mark.asyncio
-async def test_python_picker_uninstall_gated_to_managed(monkeypatch):
+async def test_python_picker_uninstall_gated_to_managed(monkeypatch) -> None:
     """Uninstall on a non-managed (system) interpreter must not dispatch a command."""
     from textual.widgets import ListView
 
     captured = {"called": False}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["called"] = True
         return 0
 
@@ -390,7 +393,7 @@ async def test_python_picker_uninstall_gated_to_managed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_python_picker_empty_list_cancels_cleanly(monkeypatch):
+async def test_python_picker_empty_list_cancels_cleanly(monkeypatch) -> None:
     monkeypatch.setattr("lazyuv.commands.run_capture", _fake_capture("[]"))
     app = LazyUvApp(root=FIXTURE)
     async with app.run_test() as pilot:
@@ -406,7 +409,7 @@ async def test_python_picker_empty_list_cancels_cleanly(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_python_picker_list_failure_no_crash(monkeypatch):
+async def test_python_picker_list_failure_no_crash(monkeypatch) -> None:
     """A nonzero `uv python list` must not open a picker or crash the app."""
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -424,11 +427,12 @@ async def test_python_picker_list_failure_no_crash(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_python_picker_capture_exception_no_crash(monkeypatch):
+async def test_python_picker_capture_exception_no_crash(monkeypatch) -> None:
     """An exception from run_capture (e.g. uv missing) is contained, not fatal."""
 
-    async def boom(argv, cwd=None):
-        raise OSError("uv not found")
+    async def boom(argv, cwd=None) -> Never:
+        msg = "uv not found"
+        raise OSError(msg)
 
     monkeypatch.setattr("lazyuv.commands.run_capture", boom)
     app = LazyUvApp(root=FIXTURE)
@@ -442,10 +446,10 @@ async def test_python_picker_capture_exception_no_crash(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_recreate_existing_venv_uses_clear(monkeypatch, tmp_path):
+async def test_recreate_existing_venv_uses_clear(monkeypatch, tmp_path) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -468,10 +472,12 @@ async def test_recreate_existing_venv_uses_clear(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_create_venv_when_absent_no_confirm_no_clear(monkeypatch, tmp_path):
+async def test_create_venv_when_absent_no_confirm_no_clear(
+    monkeypatch, tmp_path
+) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -489,12 +495,12 @@ async def test_create_venv_when_absent_no_confirm_no_clear(monkeypatch, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_sync_options_selects_extra(monkeypatch):
+async def test_sync_options_selects_extra(monkeypatch) -> None:
     from textual.widgets import SelectionList
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -515,7 +521,7 @@ async def test_sync_options_selects_extra(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_environment_panel_empty_state(tmp_path):
+async def test_environment_panel_empty_state(tmp_path) -> None:
     from lazyuv.widgets.environment import EnvironmentPanel
 
     _write_project(tmp_path)  # no .venv, no .python-version
@@ -527,12 +533,14 @@ async def test_environment_panel_empty_state(tmp_path):
         assert "No venv or pin" in rendered
 
 
-def test_help_overlay_lists_new_bindings():
+def test_help_overlay_lists_new_bindings() -> None:
     from lazyuv.screens.help import _HELP
 
-    assert "p" in _HELP and "python" in _HELP.lower()
+    assert "p" in _HELP
+    assert "python" in _HELP.lower()
     assert "S" in _HELP
-    assert "v" in _HELP and "venv" in _HELP.lower()
+    assert "v" in _HELP
+    assert "venv" in _HELP.lower()
 
 
 # --- Milestone 3: global tools & cache -------------------------------------
@@ -554,7 +562,7 @@ def _global_capture(cache_dir="/home/x/.cache/uv", tool_list=_TOOL_LIST):
 
 
 def _capture_streaming(captured):
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -562,7 +570,7 @@ def _capture_streaming(captured):
 
 
 @pytest.mark.asyncio
-async def test_toggle_to_global_loads_tools(monkeypatch):
+async def test_toggle_to_global_loads_tools(monkeypatch) -> None:
     from lazyuv.widgets.tools import ToolsPanel
 
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
@@ -585,7 +593,7 @@ async def test_toggle_to_global_loads_tools(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tool_install_flow(monkeypatch):
+async def test_tool_install_flow(monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
@@ -608,7 +616,7 @@ async def test_tool_install_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tool_upgrade_all_flow(monkeypatch):
+async def test_tool_upgrade_all_flow(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -626,7 +634,7 @@ async def test_tool_upgrade_all_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tool_uninstall_confirm_flow(monkeypatch):
+async def test_tool_uninstall_confirm_flow(monkeypatch) -> None:
     from lazyuv.widgets.tools import ToolsPanel
 
     captured = {}
@@ -650,7 +658,7 @@ async def test_tool_uninstall_confirm_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cache_prune_flow(monkeypatch):
+async def test_cache_prune_flow(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -668,7 +676,7 @@ async def test_cache_prune_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cache_clean_confirm_flow(monkeypatch):
+async def test_cache_clean_confirm_flow(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -688,7 +696,7 @@ async def test_cache_clean_confirm_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cache_size_computed_on_demand(monkeypatch, tmp_path):
+async def test_cache_size_computed_on_demand(monkeypatch, tmp_path) -> None:
     from lazyuv.widgets.cache import CachePanel
 
     (tmp_path / "blob").write_bytes(b"x" * 2048)
@@ -710,7 +718,7 @@ async def test_cache_size_computed_on_demand(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_self_update_confirm_flow(monkeypatch):
+async def test_self_update_confirm_flow(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -730,7 +738,7 @@ async def test_self_update_confirm_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_global_keys_noop_in_project_mode(monkeypatch):
+async def test_global_keys_noop_in_project_mode(monkeypatch) -> None:
     from lazyuv.screens.tool_install import ToolInstallScreen
 
     captured = {}
@@ -749,7 +757,7 @@ async def test_global_keys_noop_in_project_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_project_keys_noop_in_global_mode(monkeypatch):
+async def test_project_keys_noop_in_global_mode(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -769,7 +777,7 @@ async def test_project_keys_noop_in_global_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_toggle_focuses_tools_then_dependencies(monkeypatch):
+async def test_toggle_focuses_tools_then_dependencies(monkeypatch) -> None:
     from lazyuv.widgets.tools import ToolsPanel
 
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
@@ -787,7 +795,7 @@ async def test_toggle_focuses_tools_then_dependencies(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tool_upgrade_single_flow(monkeypatch):
+async def test_tool_upgrade_single_flow(monkeypatch) -> None:
     from lazyuv.widgets.tools import ToolsPanel
 
     captured = {}
@@ -809,7 +817,7 @@ async def test_tool_upgrade_single_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cache_size_busy_guard_blocks_second_scan(monkeypatch, tmp_path):
+async def test_cache_size_busy_guard_blocks_second_scan(monkeypatch, tmp_path) -> None:
     (tmp_path / "blob").write_bytes(b"x" * 4096)
     monkeypatch.setattr(
         "lazyuv.commands.run_capture", _global_capture(cache_dir=str(tmp_path))
@@ -831,11 +839,11 @@ async def test_cache_size_busy_guard_blocks_second_scan(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_self_update_failure_surfaced(monkeypatch):
+async def test_self_update_failure_surfaced(monkeypatch) -> None:
     """A failing `uv self update` must surface its exit in the Output panel."""
     from lazyuv.widgets.output import OutputPanel
 
-    async def failing_streaming(argv, on_line, cwd=None):
+    async def failing_streaming(argv, on_line, cwd=None) -> int:
         on_line("error: uv was installed through an external package manager")
         return 2
 
@@ -858,7 +866,7 @@ async def test_self_update_failure_surfaced(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_self_update_refreshes_version(monkeypatch):
+async def test_self_update_refreshes_version(monkeypatch) -> None:
     """After self-update, the shown uv version is re-read (not left stale)."""
     versions = iter(["uv 0.11.31 (Homebrew)", "uv 0.99.0 (Homebrew)"])
 
@@ -871,7 +879,7 @@ async def test_self_update_refreshes_version(monkeypatch):
             return 0, "/tmp/cache\n"
         return 0, ""
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         return 0
 
     monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
@@ -889,7 +897,7 @@ async def test_self_update_refreshes_version(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_refresh_global_surfaces_tool_list_failure(monkeypatch):
+async def test_refresh_global_surfaces_tool_list_failure(monkeypatch) -> None:
     from lazyuv.widgets.output import OutputPanel
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -911,7 +919,7 @@ async def test_refresh_global_surfaces_tool_list_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tools_panel_escapes_markup(monkeypatch):
+async def test_tools_panel_escapes_markup(monkeypatch) -> None:
     """A tool name with bracket markup must not be interpreted as Rich markup."""
     from lazyuv.widgets.tools import ToolsPanel
 
@@ -926,13 +934,16 @@ async def test_tools_panel_escapes_markup(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         panel = app.query_one(ToolsPanel)
-        assert len(panel) == 1  # panel populated (rendered the markup-y name) without raising
+        assert (
+            len(panel) == 1
+        )  # panel populated (rendered the markup-y name) without raising
         # the parsed tool keeps its literal name; rendering doesn't raise
-        assert app.tools and app.tools[0].name == "ev[il]"
+        assert app.tools
+        assert app.tools[0].name == "ev[il]"
 
 
 @pytest.mark.asyncio
-async def test_more_mode_gated_keys(monkeypatch):
+async def test_more_mode_gated_keys(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
     monkeypatch.setattr("lazyuv.commands.run_streaming", _capture_streaming(captured))
@@ -982,12 +993,12 @@ def _write_ws(root: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch):
+async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch) -> None:
     from lazyuv.widgets.workspace import WorkspacePanel
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         captured["cwd"] = cwd
         return 0
@@ -1013,7 +1024,8 @@ async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch):
         await pilot.pause()
         await pilot.click("#ok")
         await pilot.pause()
-        assert app.focused_member is not None and app.focused_member.name == "alpha"
+        assert app.focused_member is not None
+        assert app.focused_member.name == "alpha"
         # deps tree is now scoped to alpha's own dependency ("rich")
         labels = [
             str(node.label)
@@ -1021,7 +1033,8 @@ async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch):
             for node in group_node.children
         ]
         assert any("rich" in lb for lb in labels)
-        assert "wsroot" in app.sub_title and "alpha" in app.sub_title
+        assert "wsroot" in app.sub_title
+        assert "alpha" in app.sub_title
         # a mutation now runs in the focused member's dir, not the workspace root
         await pilot.press("s")
         await app.workers.wait_for_complete()
@@ -1030,7 +1043,7 @@ async def test_workspace_panel_shows_and_switches(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_workspace_switch_back_to_root_rescopes(tmp_path):
+async def test_workspace_switch_back_to_root_rescopes(tmp_path) -> None:
     _write_ws(tmp_path)
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -1067,7 +1080,7 @@ async def test_workspace_switch_back_to_root_rescopes(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_no_workspace_panel_hidden():
+async def test_no_workspace_panel_hidden() -> None:
     from lazyuv.widgets.workspace import WorkspacePanel
 
     app = LazyUvApp(root=FIXTURE)  # sample project is not a workspace
@@ -1078,10 +1091,10 @@ async def test_no_workspace_panel_hidden():
 
 
 @pytest.mark.asyncio
-async def test_targeted_upgrade_builds_argv(monkeypatch):
+async def test_targeted_upgrade_builds_argv(monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1106,10 +1119,10 @@ async def test_targeted_upgrade_builds_argv(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_export_flow_builds_argv(monkeypatch):
+async def test_export_flow_builds_argv(monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1127,13 +1140,18 @@ async def test_export_flow_builds_argv(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == [
-            "uv", "export", "--format", "requirements.txt",
-            "--no-hashes", "-o", "requirements.txt",
+            "uv",
+            "export",
+            "--format",
+            "requirements.txt",
+            "--no-hashes",
+            "-o",
+            "requirements.txt",
         ]
 
 
 @pytest.mark.asyncio
-async def test_details_shows_source_via_line(tmp_path):
+async def test_details_shows_source_via_line(tmp_path) -> None:
     from lazyuv.widgets.details import DetailsPanel
 
     _write_ws(tmp_path)
@@ -1147,14 +1165,16 @@ async def test_details_shows_source_via_line(tmp_path):
         # httpx has no source entry -> no via line; now render a sourced dep
         from lazyuv.models import Dependency
 
-        sourced = Dependency(name="alpha", spec="", group="main", source_detail="workspace")
+        sourced = Dependency(
+            name="alpha", spec="", group="main", source_detail="workspace"
+        )
         app.query_one(DetailsPanel).show_dependency(sourced)
         assert "via:" in str(app.query_one(DetailsPanel).render())
         assert "workspace" in str(app.query_one(DetailsPanel).render())
 
 
 @pytest.mark.asyncio
-async def test_workspace_export_gated_in_global(monkeypatch):
+async def test_workspace_export_gated_in_global(monkeypatch) -> None:
     from lazyuv.screens.export import ExportScreen
     from lazyuv.screens.workspace import WorkspaceSwitchScreen
 
@@ -1198,7 +1218,7 @@ def _write_script_project(root: Path) -> None:
     (root / "demo.py").write_text(_SCRIPT_BLOCK)
 
 
-async def _enter_script_mode(pilot, app, tmp_path):
+async def _enter_script_mode(pilot, app, tmp_path) -> None:
     # demo.py is the only .py under the host project, so it's the sole (highlighted)
     # entry in the picker — just confirm the default selection.
     await pilot.press("o")
@@ -1208,7 +1228,7 @@ async def _enter_script_mode(pilot, app, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_open_script_enters_script_mode(tmp_path):
+async def test_open_script_enters_script_mode(tmp_path) -> None:
     from lazyuv.widgets.environment import EnvironmentPanel
     from lazyuv.widgets.scripts import ScriptsPanel
 
@@ -1234,12 +1254,12 @@ async def test_open_script_enters_script_mode(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_script_add_builds_script_argv(tmp_path, monkeypatch):
+async def test_script_add_builds_script_argv(tmp_path, monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         captured["cwd"] = cwd
         return 0
@@ -1258,16 +1278,21 @@ async def test_script_add_builds_script_argv(tmp_path, monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == [
-            "uv", "add", "--script", "demo.py", "cowsay", "httpx",
+            "uv",
+            "add",
+            "--script",
+            "demo.py",
+            "cowsay",
+            "httpx",
         ]
         assert captured["cwd"] == tmp_path
 
 
 @pytest.mark.asyncio
-async def test_script_remove_builds_script_argv(tmp_path, monkeypatch):
+async def test_script_remove_builds_script_argv(tmp_path, monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1289,10 +1314,10 @@ async def test_script_remove_builds_script_argv(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_script_run_builds_script_argv(tmp_path, monkeypatch):
+async def test_script_run_builds_script_argv(tmp_path, monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         captured["cwd"] = cwd
         return 0
@@ -1312,7 +1337,7 @@ async def test_script_run_builds_script_argv(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_escape_exits_script_mode(tmp_path):
+async def test_escape_exits_script_mode(tmp_path) -> None:
     from lazyuv.widgets.environment import EnvironmentPanel
 
     _write_script_project(tmp_path)
@@ -1332,7 +1357,7 @@ async def test_escape_exits_script_mode(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_mode_gating_check_action(tmp_path):
+async def test_mode_gating_check_action(tmp_path) -> None:
     _write_script_project(tmp_path)
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -1358,7 +1383,7 @@ async def test_mode_gating_check_action(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_toggle_global_clears_script_focus(tmp_path):
+async def test_toggle_global_clears_script_focus(tmp_path) -> None:
     _write_script_project(tmp_path)
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -1372,7 +1397,9 @@ async def test_toggle_global_clears_script_focus(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_script_picker_manual_path_opens_omitted_script(tmp_path, monkeypatch):
+async def test_script_picker_manual_path_opens_omitted_script(
+    tmp_path, monkeypatch
+) -> None:
     from textual.widgets import Input
 
     # Simulate a truncated scan that omitted the target script entirely.
@@ -1403,16 +1430,23 @@ _APP_TREE_JSON = json.dumps({
     "schema": {"version": "preview"},
     "roots": [{"id": "root"}],
     "resolution": {
-        "root": {"name": "sample", "version": "0.2.0",
-                 "dependencies": [{"id": "httpx"}]},
-        "httpx": {"name": "httpx", "version": "0.28.1",
-                  "latest_version": "0.29.0", "dependencies": []},
+        "root": {
+            "name": "sample",
+            "version": "0.2.0",
+            "dependencies": [{"id": "httpx"}],
+        },
+        "httpx": {
+            "name": "httpx",
+            "version": "0.28.1",
+            "latest_version": "0.29.0",
+            "dependencies": [],
+        },
     },
 })
 
 
 @pytest.mark.asyncio
-async def test_tree_key_opens_modal(monkeypatch):
+async def test_tree_key_opens_modal(monkeypatch) -> None:
     from lazyuv.screens.tree import DependencyTreeScreen
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -1430,12 +1464,13 @@ async def test_tree_key_opens_modal(monkeypatch):
         await pilot.pause()
         assert isinstance(app.screen, DependencyTreeScreen)
         from textual.widgets import Tree
+
         labels = [str(n.label) for n in app.screen.query_one(Tree).root.children]
         assert any("sample" in lb for lb in labels)
 
 
 @pytest.mark.asyncio
-async def test_outdated_toggle_annotates_and_clears(monkeypatch):
+async def test_outdated_toggle_annotates_and_clears(monkeypatch) -> None:
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
             return 0, _APP_TREE_JSON
@@ -1466,7 +1501,7 @@ async def test_outdated_toggle_annotates_and_clears(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_dep_upgrades_with_u(monkeypatch):
+async def test_outdated_dep_upgrades_with_u(monkeypatch) -> None:
     captured = {}
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -1474,7 +1509,7 @@ async def test_outdated_dep_upgrades_with_u(monkeypatch):
             return 0, _APP_TREE_JSON
         return 0, "uv 0.11.31"
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1503,12 +1538,12 @@ async def test_outdated_dep_upgrades_with_u(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_args_project_mode_builds_argv(monkeypatch):
+async def test_run_args_project_mode_builds_argv(monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1528,17 +1563,21 @@ async def test_run_args_project_mode_builds_argv(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == [
-            "uv", "run", "serve", "--verbose", "input.txt",
+            "uv",
+            "run",
+            "serve",
+            "--verbose",
+            "input.txt",
         ]
 
 
 @pytest.mark.asyncio
-async def test_run_args_script_mode_preserves_quoted_arg(tmp_path, monkeypatch):
+async def test_run_args_script_mode_preserves_quoted_arg(tmp_path, monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1557,12 +1596,17 @@ async def test_run_args_script_mode_preserves_quoted_arg(tmp_path, monkeypatch):
         await pilot.pause()
         # shlex keeps the quoted arg as one token; no `--` injected
         assert captured["argv"] == [
-            "uv", "run", "--script", "demo.py", "--name", "two words",
+            "uv",
+            "run",
+            "--script",
+            "demo.py",
+            "--name",
+            "two words",
         ]
 
 
 @pytest.mark.asyncio
-async def test_m6_mode_gating(tmp_path):
+async def test_m6_mode_gating(tmp_path) -> None:
     _write_script_project(tmp_path)
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -1587,7 +1631,7 @@ async def test_m6_mode_gating(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_outdated_count_matches_annotations_after_upgrade(monkeypatch):
+async def test_outdated_count_matches_annotations_after_upgrade(monkeypatch) -> None:
     # Regression: once resolved == latest (post-upgrade), the dep is no longer shown
     # as outdated AND must not be counted in the title — the two use one predicate.
     from lazyuv.models import Dependency
@@ -1614,7 +1658,7 @@ async def test_outdated_count_matches_annotations_after_upgrade(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tree_scopes_to_focused_member(tmp_path, monkeypatch):
+async def test_tree_scopes_to_focused_member(tmp_path, monkeypatch) -> None:
     # uv tree is workspace-global; a focused member must be targeted with --package.
     from textual.widgets import ListView
 
@@ -1646,12 +1690,18 @@ async def test_tree_scopes_to_focused_member(tmp_path, monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert captured["argv"] == [
-            "uv", "tree", "--format", "json", "--frozen", "--package", "alpha",
+            "uv",
+            "tree",
+            "--format",
+            "json",
+            "--frozen",
+            "--package",
+            "alpha",
         ]
 
 
 @pytest.mark.asyncio
-async def test_tree_no_package_at_workspace_root(tmp_path, monkeypatch):
+async def test_tree_no_package_at_workspace_root(tmp_path, monkeypatch) -> None:
     captured = {}
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -1676,12 +1726,15 @@ async def test_tree_no_package_at_workspace_root(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_active_empty_shows_zero(monkeypatch):
+async def test_outdated_active_empty_shows_zero(monkeypatch) -> None:
     # An active overlay that found nothing must still read "outdated: 0", not look off.
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
-            return 0, json.dumps({"schema": {"version": "preview"}, "roots": [],
-                                  "resolution": {}})
+            return 0, json.dumps({
+                "schema": {"version": "preview"},
+                "roots": [],
+                "resolution": {},
+            })
         return 0, "uv 0.11.31"
 
     monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
@@ -1697,7 +1750,7 @@ async def test_outdated_active_empty_shows_zero(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_unparseable_does_not_claim_zero(monkeypatch):
+async def test_outdated_unparseable_does_not_claim_zero(monkeypatch) -> None:
     # exit 0 but unreadable JSON must surface an error and NOT report "0 outdated".
     from lazyuv.widgets.output import OutputPanel
 
@@ -1723,7 +1776,7 @@ async def test_outdated_unparseable_does_not_claim_zero(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_query_failure_clears_and_resets_busy(monkeypatch):
+async def test_outdated_query_failure_clears_and_resets_busy(monkeypatch) -> None:
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
             return 2, ""
@@ -1742,7 +1795,7 @@ async def test_outdated_query_failure_clears_and_resets_busy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tree_unparseable_opens_no_modal(monkeypatch):
+async def test_tree_unparseable_opens_no_modal(monkeypatch) -> None:
     from lazyuv.screens.tree import DependencyTreeScreen
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
@@ -1762,14 +1815,15 @@ async def test_tree_unparseable_opens_no_modal(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_args_invalid_shlex_surfaced_no_run(monkeypatch):
+async def test_run_args_invalid_shlex_surfaced_no_run(monkeypatch) -> None:
     from textual.widgets import Input
+
     from lazyuv.widgets.scripts import ScriptsPanel
 
     ran = []
     from lazyuv.widgets.output import OutputPanel
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         ran.append(argv)
         return 0
 
@@ -1791,13 +1845,14 @@ async def test_run_args_invalid_shlex_surfaced_no_run(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_args_empty_runs_with_no_args(monkeypatch):
+async def test_run_args_empty_runs_with_no_args(monkeypatch) -> None:
     from textual.widgets import Input
+
     from lazyuv.widgets.scripts import ScriptsPanel
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -1817,7 +1872,9 @@ async def test_run_args_empty_runs_with_no_args(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_cleared_when_entering_script_mode(tmp_path, monkeypatch):
+async def test_outdated_cleared_when_entering_script_mode(
+    tmp_path, monkeypatch
+) -> None:
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
             return 0, _APP_TREE_JSON  # marks httpx outdated
@@ -1839,19 +1896,28 @@ async def test_outdated_cleared_when_entering_script_mode(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_outdated_cleared_on_workspace_switch(tmp_path, monkeypatch):
+async def test_outdated_cleared_on_workspace_switch(tmp_path, monkeypatch) -> None:
     from textual.widgets import ListView
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
             # rich (alpha's dep) is outdated
             return 0, json.dumps({
-                "schema": {"version": "preview"}, "roots": [{"id": "r"}],
-                "resolution": {"r": {"name": "alpha", "version": "0.1.0",
-                                     "dependencies": [{"id": "rich"}]},
-                               "rich": {"name": "rich", "version": "13.0.0",
-                                        "latest_version": "15.0.0",
-                                        "dependencies": []}},
+                "schema": {"version": "preview"},
+                "roots": [{"id": "r"}],
+                "resolution": {
+                    "r": {
+                        "name": "alpha",
+                        "version": "0.1.0",
+                        "dependencies": [{"id": "rich"}],
+                    },
+                    "rich": {
+                        "name": "rich",
+                        "version": "13.0.0",
+                        "latest_version": "15.0.0",
+                        "dependencies": [],
+                    },
+                },
             })
         return 0, "uv 0.11.31"
 
@@ -1885,7 +1951,7 @@ async def test_outdated_cleared_on_workspace_switch(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_scopes_to_focused_member(tmp_path, monkeypatch):
+async def test_outdated_scopes_to_focused_member(tmp_path, monkeypatch) -> None:
     from textual.widgets import ListView
 
     captured = {}
@@ -1917,13 +1983,14 @@ async def test_outdated_scopes_to_focused_member(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_query_timeout_recovers(monkeypatch):
+async def test_outdated_query_timeout_recovers(monkeypatch) -> None:
     # A network stall must not wedge the UI: _busy resets, overlay clears, error shown.
     from lazyuv.widgets.output import OutputPanel
 
     async def fake_run_capture(argv, cwd=None, timeout=None):
         if "tree" in argv:
-            raise TimeoutError("`uv tree --outdated` timed out after 60s")
+            msg = "`uv tree --outdated` timed out after 60s"
+            raise TimeoutError(msg)
         return 0, "uv 0.11.31"
 
     monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
@@ -1942,7 +2009,7 @@ async def test_outdated_query_timeout_recovers(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_outdated_count_respects_filter():
+async def test_outdated_count_respects_filter() -> None:
     # Title count must match the filtered leaves, not the whole dependency set.
     from lazyuv.models import Dependency
     from lazyuv.widgets.dependencies import DependenciesPanel
@@ -1966,16 +2033,18 @@ async def test_outdated_count_respects_filter():
             for group_node in panel.root.children
             for node in group_node.children
         ]
-        assert len(labels) == 1 and "httpx" in labels[0]
+        assert len(labels) == 1
+        assert "httpx" in labels[0]
 
 
 # --- help page -------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_help_is_fullscreen_page_without_wrapping():
-    from lazyuv.screens.help import HelpScreen, _HELP
+async def test_help_is_fullscreen_page_without_wrapping() -> None:
     from textual.widgets import Static
+
+    from lazyuv.screens.help import _HELP, HelpScreen
 
     longest = max(len(line) for line in _HELP.splitlines())
     assert longest > 60  # wider than the old shared dialog width
@@ -1994,7 +2063,7 @@ async def test_help_is_fullscreen_page_without_wrapping():
 
 
 @pytest.mark.asyncio
-async def test_help_page_scrollable_when_taller_than_terminal():
+async def test_help_page_scrollable_when_taller_than_terminal() -> None:
     # On a short terminal the list overflows; the page must be keyboard-scrollable
     # (focused scroller) so the bottom is reachable, and close on escape and q.
     from lazyuv.screens.help import HelpScreen
@@ -2019,12 +2088,12 @@ async def test_help_page_scrollable_when_taller_than_terminal():
 
 
 @pytest.mark.asyncio
-async def test_version_bump_builds_argv(monkeypatch):
+async def test_version_bump_builds_argv(monkeypatch) -> None:
     from textual.widgets import Select
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         captured["cwd"] = cwd
         return 0
@@ -2044,12 +2113,12 @@ async def test_version_bump_builds_argv(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_set_overrides_bump(monkeypatch):
+async def test_version_set_overrides_bump(monkeypatch) -> None:
     from textual.widgets import Input, Select
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -2069,7 +2138,7 @@ async def test_version_set_overrides_bump(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_modal_seeded_with_current():
+async def test_version_modal_seeded_with_current() -> None:
     app = LazyUvApp(root=FIXTURE)  # sample 0.2.0
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -2081,7 +2150,7 @@ async def test_version_modal_seeded_with_current():
 
 
 @pytest.mark.asyncio
-async def test_version_inert_in_script_and_global(tmp_path):
+async def test_version_inert_in_script_and_global(tmp_path) -> None:
     _write_script_project(tmp_path)
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
@@ -2100,13 +2169,13 @@ async def test_version_inert_in_script_and_global(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_version_scopes_to_focused_member(tmp_path, monkeypatch):
+async def test_version_scopes_to_focused_member(tmp_path, monkeypatch) -> None:
     # The feature's core novelty: a bump targets the focused member via cwd.
     from textual.widgets import ListView
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["cwd"] = cwd
         return 0
 
@@ -2131,10 +2200,10 @@ async def test_version_scopes_to_focused_member(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_cancel_and_escape_do_not_mutate(monkeypatch):
+async def test_version_cancel_and_escape_do_not_mutate(monkeypatch) -> None:
     ran = []
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         ran.append(argv)
         return 0
 
@@ -2154,7 +2223,7 @@ async def test_version_cancel_and_escape_do_not_mutate(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_busy_guard_no_modal():
+async def test_version_busy_guard_no_modal() -> None:
     from lazyuv.screens.version import VersionScreen
 
     app = LazyUvApp(root=FIXTURE)
@@ -2167,12 +2236,12 @@ async def test_version_busy_guard_no_modal():
 
 
 @pytest.mark.asyncio
-async def test_version_enter_sets_typed_value(monkeypatch):
+async def test_version_enter_sets_typed_value(monkeypatch) -> None:
     from textual.widgets import Input
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -2193,13 +2262,14 @@ async def test_version_enter_sets_typed_value(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_enter_on_empty_is_noop(monkeypatch):
+async def test_version_enter_on_empty_is_noop(monkeypatch) -> None:
     from textual.widgets import Input
+
     from lazyuv.screens.version import VersionScreen
 
     ran = []
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         ran.append(argv)
         return 0
 
@@ -2218,7 +2288,7 @@ async def test_version_enter_on_empty_is_noop(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_bump_refreshes_displayed_version(tmp_path, monkeypatch):
+async def test_version_bump_refreshes_displayed_version(tmp_path, monkeypatch) -> None:
     from textual.widgets import Select
 
     (tmp_path / "pyproject.toml").write_text(
@@ -2229,7 +2299,7 @@ async def test_version_bump_refreshes_displayed_version(tmp_path, monkeypatch):
         "dependencies = []\n"
     )
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         # emulate uv writing the bumped version to pyproject
         (tmp_path / "pyproject.toml").write_text(
             "[project]\n"
@@ -2257,8 +2327,8 @@ async def test_version_bump_refreshes_displayed_version(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_version_failure_resets_busy(monkeypatch):
-    async def fake_run_streaming(argv, on_line, cwd=None):
+async def test_version_failure_resets_busy(monkeypatch) -> None:
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         on_line("error: bad version")
         return 2  # uv rejects a bad value
 
@@ -2278,7 +2348,7 @@ async def test_version_failure_resets_busy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_init_gating(tmp_path):
+async def test_init_gating(tmp_path) -> None:
     # init is live ONLY when there's genuinely no pyproject.toml.
     app = LazyUvApp(root=tmp_path)  # empty dir -> not a project
     async with app.run_test() as pilot:
@@ -2294,7 +2364,7 @@ async def test_init_gating(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_init_inert_when_pyproject_malformed(tmp_path):
+async def test_init_inert_when_pyproject_malformed(tmp_path) -> None:
     # A malformed pyproject also leaves project None, but uv init would refuse it —
     # so init must be gated on file absence, not on `project is None`.
     (tmp_path / "pyproject.toml").write_text("this is = = not toml")
@@ -2306,9 +2376,11 @@ async def test_init_inert_when_pyproject_malformed(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_init_binding_deactivates_after_project_created(tmp_path, monkeypatch):
+async def test_init_binding_deactivates_after_project_created(
+    tmp_path, monkeypatch
+) -> None:
     # After a successful init the footer must stop advertising `n` (bindings refreshed).
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         (tmp_path / "pyproject.toml").write_text(
             "[project]\n"
             'name = "fresh"\n'
@@ -2332,23 +2404,24 @@ async def test_init_binding_deactivates_after_project_created(tmp_path, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_init_message_mentions_key(tmp_path):
+async def test_init_message_mentions_key(tmp_path) -> None:
     from lazyuv.widgets.details import DetailsPanel
 
     app = LazyUvApp(root=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         rendered = str(app.query_one(DetailsPanel).render())
-        assert "uv init" in rendered and "`n`" in rendered
+        assert "uv init" in rendered
+        assert "`n`" in rendered
 
 
 @pytest.mark.asyncio
-async def test_init_builds_argv(tmp_path, monkeypatch):
+async def test_init_builds_argv(tmp_path, monkeypatch) -> None:
     from textual.widgets import Input, Select
 
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         captured["cwd"] = cwd
         return 0
@@ -2369,10 +2442,10 @@ async def test_init_builds_argv(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_init_default_app_no_name(tmp_path, monkeypatch):
+async def test_init_default_app_no_name(tmp_path, monkeypatch) -> None:
     captured = {}
 
-    async def fake_run_streaming(argv, on_line, cwd=None):
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         captured["argv"] = argv
         return 0
 
@@ -2389,8 +2462,8 @@ async def test_init_default_app_no_name(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_init_then_loads_project(tmp_path, monkeypatch):
-    async def fake_run_streaming(argv, on_line, cwd=None):
+async def test_init_then_loads_project(tmp_path, monkeypatch) -> None:
+    async def fake_run_streaming(argv, on_line, cwd=None) -> int:
         # emulate uv writing a pyproject the read path then loads
         (tmp_path / "pyproject.toml").write_text(
             "[project]\n"
@@ -2411,5 +2484,6 @@ async def test_init_then_loads_project(tmp_path, monkeypatch):
         await pilot.click("#ok")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert app.project is not None and app.project.name == "fresh"
+        assert app.project is not None
+        assert app.project.name == "fresh"
         assert "fresh" in app.sub_title

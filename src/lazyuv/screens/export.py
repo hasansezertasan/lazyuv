@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, SelectionList
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 # Dismiss payload: (fmt, output_file, no_hashes, no_dev, extras, groups).
 ExportOptions = tuple[str, str, bool, bool, list[str], list[str]]
@@ -52,18 +56,20 @@ class ExportScreen(ModalScreen["ExportOptions | None"]):
         if event.button.id == "cancel":
             self.dismiss(None)
             return
-        fmt = self.query_one("#export-format", Input).value.strip() or "requirements.txt"
-        output = self.query_one("#export-output", Input).value.strip() or "requirements.txt"
-        self.dismiss(
-            (
-                fmt,
-                output,
-                self.query_one("#export-no-hashes", Checkbox).value,
-                self.query_one("#export-no-dev", Checkbox).value,
-                self._selected("export-extras"),
-                self._selected("export-groups"),
-            )
+        fmt = (
+            self.query_one("#export-format", Input).value.strip() or "requirements.txt"
         )
+        output = (
+            self.query_one("#export-output", Input).value.strip() or "requirements.txt"
+        )
+        self.dismiss((
+            fmt,
+            output,
+            self.query_one("#export-no-hashes", Checkbox).value,
+            self.query_one("#export-no-dev", Checkbox).value,
+            self._selected("export-extras"),
+            self._selected("export-groups"),
+        ))
 
     def key_escape(self) -> None:
         self.dismiss(None)

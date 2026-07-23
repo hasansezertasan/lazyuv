@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.markup import escape
 from textual.widgets import Label, ListItem, ListView
 
-from lazyuv.models import Tool
+if TYPE_CHECKING:
+    from lazyuv.models import Tool
 
 
 class ToolsPanel(ListView):
@@ -21,9 +24,7 @@ class ToolsPanel(ListView):
         for tool in tools:
             # Escape: name/version come from parsing `uv tool list` (arbitrary PyPI
             # package names) — a stray "[" must not be read as Rich markup.
-            self.append(
-                ListItem(Label(f"{escape(tool.name)}  {escape(tool.version)}"))
-            )
+            self.append(ListItem(Label(f"{escape(tool.name)}  {escape(tool.version)}")))
 
     @property
     def selected_tool(self) -> Tool | None:

@@ -11,7 +11,7 @@ network in CI), so they never turn into flaky failures.
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -34,6 +34,9 @@ from lazyuv.data import (
     parse_tree,
 )
 from lazyuv.models import LoadStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = pytest.mark.skipif(not uv_available(), reason="uv not on PATH")
 
@@ -74,10 +77,11 @@ def _skip_only_if_offline(result: subprocess.CompletedProcess) -> None:
     if any(marker in stderr for marker in _NETWORK_MARKERS):
         pytest.skip(f"uv could not reach the network: {result.stderr.strip()}")
     # Not a network problem → a real, test-worthy failure (bad flag, changed CLI).
-    raise AssertionError(f"uv exited {result.returncode}: {result.stderr.strip()}")
+    msg = f"uv exited {result.returncode}: {result.stderr.strip()}"
+    raise AssertionError(msg)
 
 
-def test_real_add_script_creates_readable_block(tmp_path):
+def test_real_add_script_creates_readable_block(tmp_path) -> None:
     script = tmp_path / "demo.py"
     script.write_text('print("hi")\n')
 
@@ -87,14 +91,17 @@ def test_real_add_script_creates_readable_block(tmp_path):
     # uv wrote a PEP 723 block our parser reads back, with the package we asked for.
     meta = parse_pep723_block(script.read_text())
     assert meta is not None
-    assert any(dep.split(">=")[0].split("==")[0].strip() == _PKG
-               for dep in meta["dependencies"])
+    assert any(
+        dep.split(">=")[0].split("==")[0].strip() == _PKG
+        for dep in meta["dependencies"]
+    )
     loaded = load_script(script)
-    assert loaded is not None and loaded.has_block
+    assert loaded is not None
+    assert loaded.has_block
     assert _PKG in {d.name for d in loaded.dependencies}
 
 
-def test_real_remove_script_drops_entry(tmp_path):
+def test_real_remove_script_drops_entry(tmp_path) -> None:
     script = tmp_path / "demo.py"
     script.write_text('print("hi")\n')
 
@@ -108,7 +115,7 @@ def test_real_remove_script_drops_entry(tmp_path):
     assert _PKG not in {d.name for d in load_script(script).dependencies}
 
 
-def test_real_run_script_executes(tmp_path):
+def test_real_run_script_executes(tmp_path) -> None:
     script = tmp_path / "demo.py"
     script.write_text('print("lazyuv-marker")\n')  # no deps -> no resolution needed
 
@@ -125,7 +132,7 @@ def _init_project(tmp_path: Path, *pkgs: str) -> subprocess.CompletedProcess:
     return _run(["uv", "add", *pkgs], tmp_path)
 
 
-def test_real_tree_json_parses(tmp_path):
+def test_real_tree_json_parses(tmp_path) -> None:
     _skip_only_if_offline(_init_project(tmp_path, "rich"))
     result = _run(build_tree(), tmp_path)
     _skip_only_if_offline(result)
@@ -135,7 +142,7 @@ def test_real_tree_json_parses(tmp_path):
     assert any(node.children for node in forest)
 
 
-def test_real_tree_outdated_surfaces_latest(tmp_path):
+def test_real_tree_outdated_surfaces_latest(tmp_path) -> None:
     # Pin an old rich so a newer release is guaranteed to exist.
     _skip_only_if_offline(_init_project(tmp_path, "rich==13.0.0"))
     result = _run(build_tree(outdated=True), tmp_path)
@@ -145,7 +152,7 @@ def test_real_tree_outdated_surfaces_latest(tmp_path):
     assert outdated["rich"] != "13.0.0"
 
 
-def test_real_run_passes_args_without_separator(tmp_path):
+def test_real_run_passes_args_without_separator(tmp_path) -> None:
     # No deps -> no resolution/network needed for the run itself.
     (tmp_path / "main.py").write_text("import sys\nprint('GOT', sys.argv[1:])\n")
     result = _run(build_run("main.py", ["--verbose", "pos"]), tmp_path)
@@ -155,26 +162,28 @@ def test_real_run_passes_args_without_separator(tmp_path):
     assert "'--'" not in result.stdout
 
 
-def test_real_version_bump_rewrites_pyproject(tmp_path):
-    _init = _run(["uv", "init", "--quiet", "."], tmp_path)
-    _skip_only_if_offline(_init)
+def test_real_version_bump_rewrites_pyproject(tmp_path) -> None:
+    init = _run(["uv", "init", "--quiet", "."], tmp_path)
+    _skip_only_if_offline(init)
     # dep-less project -> re-lock is offline; bump 0.1.0 -> 0.1.1
     result = _run(build_version_bump("patch"), tmp_path)
     _skip_only_if_offline(result)
     proj = load_project(tmp_path).project
-    assert proj is not None and proj.version == "0.1.1"
+    assert proj is not None
+    assert proj.version == "0.1.1"
 
 
-def test_real_version_set_exact(tmp_path):
-    _init = _run(["uv", "init", "--quiet", "."], tmp_path)
-    _skip_only_if_offline(_init)
+def test_real_version_set_exact(tmp_path) -> None:
+    init = _run(["uv", "init", "--quiet", "."], tmp_path)
+    _skip_only_if_offline(init)
     result = _run(build_version_set("9.9.9"), tmp_path)
     _skip_only_if_offline(result)
     proj = load_project(tmp_path).project
-    assert proj is not None and proj.version == "9.9.9"
+    assert proj is not None
+    assert proj.version == "9.9.9"
 
 
-def test_real_init_app_creates_loadable_project(tmp_path):
+def test_real_init_app_creates_loadable_project(tmp_path) -> None:
     result = _run(build_init("app"), tmp_path)  # offline
     assert result.returncode == 0, result.stderr
     loaded = load_project(tmp_path)
@@ -183,7 +192,7 @@ def test_real_init_app_creates_loadable_project(tmp_path):
     assert loaded.project.name  # a real, non-empty project name
 
 
-def test_real_init_bare_only_pyproject(tmp_path):
+def test_real_init_bare_only_pyproject(tmp_path) -> None:
     result = _run(build_init("bare"), tmp_path)
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "pyproject.toml").is_file()

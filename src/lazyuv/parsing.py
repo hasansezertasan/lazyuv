@@ -24,7 +24,7 @@ def split_requirement(requirement: str) -> tuple[str, str]:
     if not match:
         return canonical_name(requirement.strip()), ""
     name = match.group(1)
-    rest = requirement[match.end():]
+    rest = requirement[match.end() :]
 
     # Drop an extras bracket: httpx[socks]>=1 -> >=1
     rest = re.sub(r"^\s*\[[^\]]*\]", "", rest)

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from textual.widgets import ListItem, ListView, Label
+from typing import TYPE_CHECKING
 
-from lazyuv.models import Script
+from textual.widgets import Label, ListItem, ListView
+
+if TYPE_CHECKING:
+    from lazyuv.models import Script
 
 
 class ScriptsPanel(ListView):

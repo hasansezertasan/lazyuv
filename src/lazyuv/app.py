@@ -38,6 +38,7 @@ from lazyuv.screens.script_picker import ScriptPickerScreen
 from lazyuv.screens.tree import DependencyTreeScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.screens.tool_install import ToolInstallScreen
+from lazyuv.screens.version import VersionScreen
 from lazyuv.screens.workspace import WorkspaceSwitchScreen
 from lazyuv.widgets.cache import CachePanel
 from lazyuv.widgets.dependencies import DependenciesPanel
@@ -82,6 +83,7 @@ class LazyUvApp(App[None]):
         Binding("t", "tree", "tree"),
         Binding("O", "outdated", "outdated", key_display="O"),
         Binding("R", "run_args", "run args", key_display="R"),
+        Binding("V", "version", "version", key_display="V"),
         # `u` upgrades the selected thing in either mode (tool / package)
         Binding("u", "upgrade", "upgrade"),
         # global-mode actions (no-op in project mode)
@@ -173,7 +175,7 @@ class LazyUvApp(App[None]):
     # Project-only: inert in both global and script mode.
     _PROJECT_ONLY_ACTIONS = frozenset({
         "sync", "sync_options", "lock", "python", "venv", "filter",
-        "workspace", "export", "tree", "outdated",
+        "workspace", "export", "tree", "outdated", "version",
     })
     # Shared by project and script mode (dispatch branches on `self.mode`).
     _PROJECT_OR_SCRIPT_ACTIONS = frozenset({
@@ -760,6 +762,27 @@ class LazyUvApp(App[None]):
                 self._run_uv(commands.build_run(target, args))
 
         self.push_screen(RunArgsScreen(target), on_close)
+
+    def action_version(self) -> None:
+        """Bump or set the project version (`uv version`)."""
+        if self.mode != "project" or self.project is None:
+            return
+        if self._busy:
+            self.bell()
+            return
+
+        def on_close(result: tuple[str, str] | None) -> None:
+            if result is None:
+                return
+            kind, value = result
+            if kind == "set":
+                self._run_uv(commands.build_version_set(value))
+            else:
+                self._run_uv(commands.build_version_bump(value))
+
+        self.push_screen(
+            VersionScreen(self.project.name, self.project.version), on_close
+        )
 
     # --- inline-script mode (PEP 723) --------------------------------------
 

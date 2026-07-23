@@ -8,6 +8,8 @@ from lazyuv.commands import (
     build_add_script,
     build_lock,
     build_tree,
+    build_version_bump,
+    build_version_set,
     build_python_install,
     build_python_list,
     build_python_pin,
@@ -336,3 +338,17 @@ def test_build_export_default_and_options():
         "--no-dev",
         "-o", "reqs.txt",
     ]
+
+
+def test_build_version_bump():
+    for kind in ("major", "minor", "patch"):
+        assert build_version_bump(kind) == ["uv", "version", "--bump", kind]
+
+
+def test_build_version_set():
+    assert build_version_set("1.2.3") == ["uv", "version", "--", "1.2.3"]
+
+
+def test_build_version_set_guards_leading_dash():
+    # The `--` is load-bearing here: without it uv would parse `-1` as an option.
+    assert build_version_set("-1") == ["uv", "version", "--", "-1"]

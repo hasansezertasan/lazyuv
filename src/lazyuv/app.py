@@ -614,16 +614,26 @@ class LazyUvApp(App[None]):
     # --- inline-script mode (PEP 723) --------------------------------------
 
     def action_open_script(self) -> None:
-        """Open the script picker to enter or switch the focused inline script."""
+        """Open the script picker to enter or switch the focused inline script.
+
+        The file scan runs off the event loop (a large tree could otherwise freeze
+        the UI). `_busy` is held for the whole picker lifecycle — like the Python
+        picker — so the scan can't race a mutation and a second `o` can't stack modals.
+        """
         if self.global_mode:
             return
         if self._busy:
             self.bell()
             return
-        scripts, truncated = find_scripts(self.active_dir)
+        self._busy = True
+        self.run_worker(self._open_script_picker())
+
+    async def _open_script_picker(self) -> None:
+        scripts, truncated = await asyncio.to_thread(find_scripts, self.active_dir)
         focused = str(self.script_path) if self.script_path is not None else None
 
         def on_close(path: str | None) -> None:
+            self._busy = False  # release before dispatching so refresh can run
             if path is None:
                 return
             self.script_path = Path(path)

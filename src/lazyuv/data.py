@@ -304,9 +304,20 @@ _PEP723_RE = re.compile(
     r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 )
 
-# A bounded walk keeps the picker responsive on large trees; the app logs when hit
-# so a truncated list never reads as "these are all the scripts".
+# A bounded walk keeps the picker responsive on large trees. Two independent caps
+# bound it: `_SCRIPT_SCAN_CAP` limits collected `.py` files, and `_SCRIPT_DIR_CAP`
+# limits directories visited so a huge tree with FEW Python files (e.g. a
+# `node_modules`) can't make the walk run unbounded. Either cap → `truncated`, and
+# the picker offers a free-text path so a script beyond the cap is still reachable.
 _SCRIPT_SCAN_CAP = 500
+_SCRIPT_DIR_CAP = 2000
+
+# Non-hidden directories that are large and never hold a user's own scripts; pruned
+# from the walk (dot-dirs like `.venv`/`.git` are already skipped separately).
+_SCRIPT_SKIP_DIRS = frozenset({
+    "node_modules", "__pycache__", "site-packages", "dist", "build",
+    ".tox", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+})
 
 
 def parse_pep723_block(text: str) -> dict | None:
@@ -383,23 +394,35 @@ def load_script(path: Path) -> InlineScript | None:
 def find_scripts(root: Path) -> tuple[list[str], bool]:
     """Return (sorted relative `.py` paths under `root`, truncated?).
 
-    A bounded walk that skips any path component starting with "." (so `.venv`,
-    `.git`, … are excluded) and stops at `_SCRIPT_SCAN_CAP` files, reporting whether
-    the cap was hit so the caller can note the truncation rather than hide it.
+    A doubly-bounded walk: it skips dot-dirs and known vendor dirs
+    (`_SCRIPT_SKIP_DIRS`), and stops at whichever comes first — `_SCRIPT_SCAN_CAP`
+    collected files or `_SCRIPT_DIR_CAP` visited directories. The directory cap keeps
+    a tree with many dirs but few `.py` files from walking unbounded. Either cap sets
+    `truncated` so the caller can note it (and offer a manual path) rather than hide
+    that the list is partial.
     """
     found: list[str] = []
     truncated = False
+    dirs_visited = 0
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _exc: None):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        dirs_visited += 1
+        if dirs_visited >= _SCRIPT_DIR_CAP:
+            truncated = True
+            dirnames[:] = []  # stop descending; finish this dir's files then exit
+        else:
+            dirnames[:] = sorted(
+                d for d in dirnames
+                if not d.startswith(".") and d not in _SCRIPT_SKIP_DIRS
+            )
         for name in sorted(filenames):
             if not name.endswith(".py"):
                 continue
-            rel = str((Path(dirpath) / name).relative_to(root))
-            found.append(rel)
+            found.append(str((Path(dirpath) / name).relative_to(root)))
             if len(found) >= _SCRIPT_SCAN_CAP:
-                truncated = True
                 found.sort()
-                return found, truncated
+                return found, True
+        if truncated:
+            break
     found.sort()
     return found, truncated
 

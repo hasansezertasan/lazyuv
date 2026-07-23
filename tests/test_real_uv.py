@@ -35,9 +35,34 @@ def _run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
-def _skip_if_no_network(result: subprocess.CompletedProcess) -> None:
-    if result.returncode != 0:
-        pytest.skip(f"uv could not resolve (likely offline): {result.stderr.strip()}")
+# Substrings uv emits for network/resolution failures. Only these are treated as
+# "offline" and skipped; ANY OTHER nonzero exit (an unsupported/misspelled flag, a
+# changed CLI) must FAIL — that is the whole point of exercising real uv here.
+_NETWORK_MARKERS = (
+    "network",
+    "failed to fetch",
+    "error sending request",
+    "could not connect",
+    "connection",
+    "timed out",
+    "timeout",
+    "offline",
+    "temporary failure in name resolution",
+    "dns error",
+    "no such host",
+    "failed to resolve",
+    "tls",
+)
+
+
+def _skip_only_if_offline(result: subprocess.CompletedProcess) -> None:
+    if result.returncode == 0:
+        return
+    stderr = result.stderr.lower()
+    if any(marker in stderr for marker in _NETWORK_MARKERS):
+        pytest.skip(f"uv could not reach the network: {result.stderr.strip()}")
+    # Not a network problem → a real, test-worthy failure (bad flag, changed CLI).
+    raise AssertionError(f"uv exited {result.returncode}: {result.stderr.strip()}")
 
 
 def test_real_add_script_creates_readable_block(tmp_path):
@@ -45,7 +70,7 @@ def test_real_add_script_creates_readable_block(tmp_path):
     script.write_text('print("hi")\n')
 
     result = _run(build_add_script("demo.py", [_PKG]), tmp_path)
-    _skip_if_no_network(result)
+    _skip_only_if_offline(result)
 
     # uv wrote a PEP 723 block our parser reads back, with the package we asked for.
     meta = parse_pep723_block(script.read_text())
@@ -62,7 +87,7 @@ def test_real_remove_script_drops_entry(tmp_path):
     script.write_text('print("hi")\n')
 
     add = _run(build_add_script("demo.py", [_PKG]), tmp_path)
-    _skip_if_no_network(add)
+    _skip_only_if_offline(add)
     assert _PKG in {d.name for d in load_script(script).dependencies}
 
     remove = _run(build_remove_script("demo.py", _PKG), tmp_path)

@@ -745,3 +745,26 @@ def test_find_scripts_reports_truncation(tmp_path, monkeypatch):
     scripts, truncated = find_scripts(tmp_path)
     assert truncated is True
     assert len(scripts) == 3
+
+
+def test_find_scripts_prunes_vendor_dirs(tmp_path):
+    (tmp_path / "keep.py").write_text("")
+    for vendor in ("node_modules", "__pycache__", "build"):
+        d = tmp_path / vendor
+        d.mkdir()
+        (d / "junk.py").write_text("")
+    scripts, truncated = find_scripts(tmp_path)
+    assert scripts == ["keep.py"]
+    assert truncated is False
+
+
+def test_find_scripts_bounds_directory_traversal(tmp_path, monkeypatch):
+    # Many directories but few .py files: the file-count cap never fires, so the
+    # directory cap must bound the walk instead of running unbounded.
+    monkeypatch.setattr("lazyuv.data._SCRIPT_DIR_CAP", 3)
+    for i in range(20):
+        sub = tmp_path / f"d{i}"
+        sub.mkdir()
+        (sub / "note.txt").write_text("")  # no .py -> file cap never hit
+    scripts, truncated = find_scripts(tmp_path)
+    assert truncated is True

@@ -92,8 +92,26 @@ def build_export(
     return argv
 
 
-def build_run(script: str) -> list[str]:
-    return ["uv", "run", script]
+def build_run(script: str, args: Sequence[str] = ()) -> list[str]:
+    # Args are appended directly — NO `--` separator. Verified on uv 0.11.31: uv stops
+    # consuming its own options once the target is seen, so leading-dash args reach the
+    # program; a literal `--` would instead be delivered to the program as an argument.
+    return ["uv", "run", script, *args]
+
+
+def build_tree(*, outdated: bool = False, frozen: bool = True) -> list[str]:
+    """Build `uv tree --format json` (a read-only query, run via run_capture).
+
+    `--frozen` keeps it read-only (never rewrites the lock). `--outdated` adds a
+    `latest_version` to each node (queries the network for latest releases). The
+    `--format json` experimental notice goes to stderr, which run_capture discards.
+    """
+    argv = ["uv", "tree", "--format", "json"]
+    if frozen:
+        argv.append("--frozen")
+    if outdated:
+        argv.append("--outdated")
+    return argv
 
 
 # --- inline scripts (PEP 723) (Milestone 5) --------------------------------
@@ -112,8 +130,8 @@ def build_remove_script(path: str, package: str) -> list[str]:
     return ["uv", "remove", "--script", path, package]
 
 
-def build_run_script(path: str) -> list[str]:
-    return ["uv", "run", "--script", path]
+def build_run_script(path: str, args: Sequence[str] = ()) -> list[str]:
+    return ["uv", "run", "--script", path, *args]
 
 
 def build_python_list() -> list[str]:

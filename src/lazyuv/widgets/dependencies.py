@@ -17,15 +17,31 @@ class DependenciesPanel(Tree):
         super().__init__("dependencies", id="dependencies")
         self.show_root = False
         self._filter = ""
+        self._dependencies: list[Dependency] = []
+        # {canonical_name: latest_version} from `O`; empty when not showing outdated.
+        self._outdated: dict[str, str] = {}
 
     def set_filter(self, text: str, dependencies: list[Dependency]) -> None:
         """Apply a name-substring filter and re-populate."""
         self._filter = text.strip().lower()
-        self.border_title = (
-            f"Dependencies — filter: {self._filter}" if self._filter else "Dependencies"
-        )
+        self._dependencies = dependencies
+        self._repopulate()
+
+    def set_outdated(self, outdated: dict[str, str]) -> None:
+        """Annotate leaves with their latest version (empty dict clears the overlay)."""
+        self._outdated = outdated
+        self._repopulate()
+
+    def _repopulate(self) -> None:
+        title = "Dependencies"
+        if self._filter:
+            title += f" — filter: {self._filter}"
+        if self._outdated:
+            n = sum(1 for d in self._dependencies if d.name in self._outdated)
+            title += f" — outdated: {n}"
+        self.border_title = title
         self.clear()
-        self._populate(dependencies)
+        self._populate(self._dependencies)
 
     def restore_selection(self, group: str, name: str) -> None:
         """Move the cursor back to the dep matching (group, name), if present.
@@ -60,6 +76,11 @@ class DependenciesPanel(Tree):
                     version = f"{joined}  ({len(dep.locked_versions)} versions)"
                 else:
                     version = dep.resolved_version or "—"
+                # When the outdated overlay is on and this dep has a newer release,
+                # show `cur → latest` so the eye lands on what `u` would upgrade.
+                latest = self._outdated.get(dep.name)
+                if latest and latest != dep.resolved_version:
+                    version = f"{version} → {latest}"
                 branch.add_leaf(f"{dep.name}  {version}", data=dep)
 
     @property

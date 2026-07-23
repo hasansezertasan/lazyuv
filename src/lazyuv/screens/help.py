@@ -17,6 +17,9 @@ _HELP = """[b]lazyuv keybindings[/b]
   S                sync with options (extras / groups / flags)
   l                lock
   r                run selected script
+  R                run selected script with arguments
+  t                dependency tree (uv tree)
+  O                toggle outdated overlay (deps with a newer release)
   u                upgrade selected package (uv lock --upgrade-package)
   p                manage Python versions
   v                create / recreate the venv
@@ -33,6 +36,7 @@ _HELP = """[b]lazyuv keybindings[/b]
   a                add script dependencies (uv add --script)
   d                remove selected dependency (uv remove --script)
   r                run the script (uv run --script)
+  R                run the script with arguments
   o                switch to another script
   Escape           back to project mode
 

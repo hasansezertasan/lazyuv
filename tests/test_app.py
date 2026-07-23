@@ -1395,3 +1395,192 @@ async def test_script_picker_manual_path_opens_omitted_script(tmp_path, monkeypa
             for node in group_node.children
         ]
         assert any("requests" in lb for lb in labels)
+
+
+# --- Milestone 6: tree / outdated / run-with-args --------------------------
+
+_APP_TREE_JSON = json.dumps({
+    "schema": {"version": "preview"},
+    "roots": [{"id": "root"}],
+    "resolution": {
+        "root": {"name": "sample", "version": "0.2.0",
+                 "dependencies": [{"id": "httpx"}]},
+        "httpx": {"name": "httpx", "version": "0.28.1",
+                  "latest_version": "0.29.0", "dependencies": []},
+    },
+})
+
+
+@pytest.mark.asyncio
+async def test_tree_key_opens_modal(monkeypatch):
+    from lazyuv.screens.tree import DependencyTreeScreen
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(app.screen, DependencyTreeScreen)
+        from textual.widgets import Tree
+        labels = [str(n.label) for n in app.screen.query_one(Tree).root.children]
+        assert any("sample" in lb for lb in labels)
+
+
+@pytest.mark.asyncio
+async def test_outdated_toggle_annotates_and_clears(monkeypatch):
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        assert app._outdated_on is True
+        assert "outdated: 1" in panel.border_title
+        labels = [
+            str(node.label)
+            for group_node in panel.root.children
+            for node in group_node.children
+        ]
+        assert any("httpx" in lb and "→ 0.29.0" in lb for lb in labels)
+        # toggle off
+        await pilot.press("O")
+        await pilot.pause()
+        assert app._outdated_on is False
+        assert panel.border_title == "Dependencies"
+
+
+@pytest.mark.asyncio
+async def test_outdated_dep_upgrades_with_u(monkeypatch):
+    captured = {}
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("O")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        leaf = next(
+            node
+            for group_node in panel.root.children
+            for node in group_node.children
+            if node.data is not None and node.data.name == "httpx"
+        )
+        panel.move_cursor(leaf)
+        await pilot.pause()
+        await pilot.press("u")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "lock", "--upgrade-package", "httpx"]
+
+
+@pytest.mark.asyncio
+async def test_run_args_project_mode_builds_argv(monkeypatch):
+    from textual.widgets import Input
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    from lazyuv.widgets.scripts import ScriptsPanel
+
+    app = LazyUvApp(root=FIXTURE)  # fixture has a [project.scripts] entry "serve"
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.query_one(ScriptsPanel).index = 0  # select the "serve" script
+        await pilot.pause()
+        await pilot.press("R")
+        await pilot.pause()
+        app.screen.query_one("#run-args", Input).value = "--verbose input.txt"
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == [
+            "uv", "run", "serve", "--verbose", "input.txt",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_run_args_script_mode_preserves_quoted_arg(tmp_path, monkeypatch):
+    from textual.widgets import Input
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _enter_script_mode(pilot, app, tmp_path)
+        await pilot.press("R")
+        await pilot.pause()
+        app.screen.query_one("#run-args", Input).value = '--name "two words"'
+        await pilot.press("enter")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # shlex keeps the quoted arg as one token; no `--` injected
+        assert captured["argv"] == [
+            "uv", "run", "--script", "demo.py", "--name", "two words",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_m6_mode_gating(tmp_path):
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # project mode: all three live
+        assert app.check_action("tree", ()) is True
+        assert app.check_action("outdated", ()) is True
+        assert app.check_action("run_args", ()) is True
+        # script mode: tree/outdated inert, run_args live
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.check_action("tree", ()) is None
+        assert app.check_action("outdated", ()) is None
+        assert app.check_action("run_args", ()) is True
+        # global mode: all three inert
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.check_action("tree", ()) is None
+        assert app.check_action("outdated", ()) is None
+        assert app.check_action("run_args", ()) is None

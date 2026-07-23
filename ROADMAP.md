@@ -195,6 +195,32 @@ run it — all through the same panel vocabulary as project mode.
 **Open questions:** is this a mode in the main app, or a separate lightweight entry
 point (`lazyuv script foo.py`)? *Resolved: a mode in the main app.*
 
+## Milestone 6 — Dependency tree, outdated view & run arguments — *shipped*
+
+**Intent:** promote three backlog items into a coherent "inspect & run" slice — see
+the transitive graph, see what's upgradable, and pass arguments when running.
+
+*Implemented* (design:
+`docs/superpowers/specs/2026-07-23-tree-outdated-run-args-design.md`). All three read
+from real uv, grounded in verified 0.11.31 behavior:
+- **Dependency tree** — `t` opens a read-only modal rendering `uv tree --frozen
+  --format json` (a `run_capture` query, fetched off the event loop) as a collapsible
+  Textual tree, de-duplicating repeated subtrees like uv's own text output.
+- **Outdated overlay** — `O` toggles `uv tree --frozen --outdated --format json`,
+  annotating the existing dependency panel (`name  cur → latest`, with a count in the
+  title). It reuses M4's `u` key: highlight a flagged dep and upgrade it via
+  `uv lock --upgrade-package`. Networked; failures surface on Output, never faked.
+- **Run with arguments** — `R` (project *and* script mode) prompts for an argument
+  string, `shlex`-split and appended to `uv run <target>` / `uv run --script <file>`.
+  Verified that uv passes post-target args straight through, so **no `--` separator is
+  injected** (a literal `--` would reach the program). `r` keeps its quick no-arg run.
+
+**Deferred** (the fourth candidate): the **diff view** — preview what a pending
+`uv lock`/`uv sync` would change before applying. Left for its own slice.
+
+**Done when:** a user can view the transitive tree, see which deps have a newer
+release and upgrade one, and run a script with arguments — all keyboard-driven.
+
 ---
 
 ## Backlog (unscheduled)
@@ -203,18 +229,19 @@ Lower-priority or design-uncertain items; promoted into a milestone when justifi
 
 - **Project browser/switcher** — open a project other than the CWD (may be
   subsumed by workspace support in M4).
-- **Dependency tree view** (`uv tree`) — visualize the transitive graph; collapsible.
-- **Outdated / upgrade view** — highlight deps with newer releases, feed targeted
-  upgrades (pairs with M4).
+- **Dependency tree view** (`uv tree`) — *shipped in M6:* read-only `t` modal over
+  `uv tree --frozen --format json`.
+- **Outdated / upgrade view** — *shipped in M6:* `O` overlay over `uv tree --outdated`
+  feeding M4's `u` targeted upgrade.
 - **Build & publish** (`uv build`, `uv publish`) — for library authors; needs care
   around credentials.
 - **`uv pip` compatibility layer** — a view over the pip-style interface for users
   who live there.
 - **`uv version`** — read/bump the project version from the UI.
 - **Diff view** — show what a pending `uv lock`/`uv sync` *would* change before
-  applying.
-- **Run scripts with arguments** — v1 runs `uv run <script>` with no extra args;
-  add an args prompt (`uv run <script> -- <args>`).
+  applying. (Deferred from M6; next up.)
+- **Run scripts with arguments** — *shipped in M6:* `R` prompts for args, `shlex`-split
+  and appended to `uv run` (no `--` separator — uv passes them through directly).
 - **Multiple locked versions** — *addressed:* a package with several `uv.lock`
   entries (universal-lock resolution forks or `[tool.uv].conflicts` variants) now
   displays all its distinct versions (`httpx  0.27.0 / 0.28.1  (2 versions)`) in

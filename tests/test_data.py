@@ -9,11 +9,14 @@ from lazyuv.data import (
     find_scripts,
     load_project,
     load_script,
+    parse_outdated,
     parse_pep723_block,
     parse_python_list,
+    parse_tree,
 )
 from lazyuv.models import (
     Dependency,
+    DepTreeNode,
     InlineScript,
     LoadStatus,
     Project,
@@ -779,3 +782,78 @@ def test_find_scripts_bounds_directory_traversal(tmp_path, monkeypatch):
         (sub / "note.txt").write_text("")  # no .py -> file cap never hit
     scripts, truncated = find_scripts(tmp_path)
     assert truncated is True
+
+
+# --- dependency tree / outdated (Milestone 6) ------------------------------
+
+_TREE_JSON = json.dumps({
+    "schema": {"version": "preview"},
+    "roots": [{"id": "root"}],
+    "resolution": {
+        "root": {
+            "name": "app", "version": "0.1.0",
+            "dependencies": [{"id": "rich"}, {"id": "idna"}, {"id": "ghost"}],
+        },
+        "rich": {
+            "name": "rich", "version": "13.0.0", "latest_version": "15.0.0",
+            # self-edge exercises the dedupe/cycle guard
+            "dependencies": [{"id": "pygments"}, {"id": "rich"}],
+        },
+        "pygments": {
+            "name": "pygments", "version": "2.20.0", "latest_version": "2.20.0",
+            "dependencies": [],
+        },
+        "idna": {
+            "name": "idna", "version": "3.0", "latest_version": "3.18",
+            "dependencies": [],
+        },
+    },
+})
+
+
+def test_parse_tree_builds_forest_with_edges():
+    forest = parse_tree(_TREE_JSON)
+    assert len(forest) == 1
+    root = forest[0]
+    assert isinstance(root, DepTreeNode)
+    assert root.name == "app" and root.version == "0.1.0"
+    child_names = [c.name for c in root.children]
+    # the dangling "ghost" edge is skipped, not raised
+    assert child_names == ["rich", "idna"]
+    rich = root.children[0]
+    assert rich.latest_version == "15.0.0"
+    # rich -> pygments, and rich -> rich (deduped, no re-expansion)
+    assert [c.name for c in rich.children] == ["pygments", "rich"]
+    self_ref = rich.children[1]
+    assert self_ref.name == "rich" and self_ref.deduped is True
+    assert self_ref.children == ()
+
+
+def test_parse_tree_malformed_returns_empty():
+    assert parse_tree("not json") == []
+    assert parse_tree(json.dumps({"roots": [{"id": "x"}]})) == []  # no resolution
+
+
+def test_parse_outdated_picks_only_newer():
+    outdated = parse_outdated(_TREE_JSON)
+    # rich 13->15 and idna 3.0->3.18 are outdated; pygments equal -> excluded
+    assert outdated == {"rich": "15.0.0", "idna": "3.18"}
+    assert "pygments" not in outdated
+
+
+def test_parse_outdated_canonical_names():
+    payload = json.dumps({
+        "schema": {"version": "preview"},
+        "roots": [],
+        "resolution": {
+            "a": {"name": "Foo_Bar", "version": "1.0", "latest_version": "2.0",
+                  "dependencies": []},
+        },
+    })
+    assert parse_outdated(payload) == {"foo-bar": "2.0"}
+
+
+def test_parse_outdated_malformed_returns_empty():
+    assert parse_outdated("nope") == {}
+    # no --outdated -> no latest_version -> nothing outdated
+    assert parse_outdated(_TREE_JSON.replace("latest_version", "x")) == {}

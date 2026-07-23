@@ -34,7 +34,8 @@ ToolsPanel, CachePanel, WorkspacePanel {
 }
 
 #add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog,
-#tool-install-dialog, #workspace-dialog, #export-dialog, #script-dialog {
+#tool-install-dialog, #workspace-dialog, #export-dialog, #script-dialog,
+#run-args-dialog, #tree-dialog {
     background: $panel;
     border: thick $primary;
     padding: 1 2;
@@ -48,6 +49,10 @@ ToolsPanel, CachePanel, WorkspacePanel {
 #sync-dialog SelectionList, #export-dialog SelectionList { height: auto; max-height: 6; }
 #workspace-list { height: auto; max-height: 10; }
 #script-list { height: auto; max-height: 12; }
+
+/* The tree modal is wider/taller and scrolls, unlike the compact form dialogs. */
+#tree-dialog { width: 80; max-height: 90%; }
+#dep-tree { height: auto; max-height: 30; }
 
 #filter-dialog {
     background: $panel;

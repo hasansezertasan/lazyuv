@@ -91,6 +91,23 @@ class PythonVersion:
 
 
 @dataclass(frozen=True, slots=True)
+class DepTreeNode:
+    """A node in the transitive dependency graph from `uv tree --format json`.
+
+    Built by resolving each root id and following dependency edges. `latest_version`
+    is set only when the tree was fetched with `--outdated`. `deduped` marks a node
+    that was already expanded elsewhere and is shown once without re-expanding its
+    children (mirrors uv's text de-duplication and bounds shared/cyclic graphs).
+    """
+
+    name: str
+    version: str
+    latest_version: str | None = None
+    children: tuple[DepTreeNode, ...] = ()
+    deduped: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class InlineScript:
     """A standalone `.py` script with PEP 723 inline metadata (`# /// script`).
 

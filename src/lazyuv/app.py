@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import sys
 from pathlib import Path
 
@@ -18,8 +19,10 @@ from lazyuv.data import (
     format_size,
     load_project,
     load_script,
+    parse_outdated,
     parse_python_list,
     parse_tool_list,
+    parse_tree,
     parse_uv_version,
 )
 from lazyuv.models import InlineScript, LoadStatus, Project, Tool, WorkspaceMember
@@ -30,7 +33,9 @@ from lazyuv.screens.export import ExportScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
 from lazyuv.screens.python import PythonPickerScreen
+from lazyuv.screens.run_args import RunArgsScreen
 from lazyuv.screens.script_picker import ScriptPickerScreen
+from lazyuv.screens.tree import DependencyTreeScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.screens.tool_install import ToolInstallScreen
 from lazyuv.screens.workspace import WorkspaceSwitchScreen
@@ -68,6 +73,10 @@ class LazyUvApp(App[None]):
         # inline-script mode: `o` opens/switches a script; escape leaves script mode
         Binding("o", "open_script", "script"),
         Binding("escape", "exit_script", "exit script"),
+        # inspect & run-args (Milestone 6)
+        Binding("t", "tree", "tree"),
+        Binding("O", "outdated", "outdated", key_display="O"),
+        Binding("R", "run_args", "run args", key_display="R"),
         # `u` upgrades the selected thing in either mode (tool / package)
         Binding("u", "upgrade", "upgrade"),
         # global-mode actions (no-op in project mode)
@@ -99,6 +108,8 @@ class LazyUvApp(App[None]):
         # active_dir. None means not in script mode.
         self.script_path: Path | None = None
         self.inline_script: InlineScript | None = None
+        # Outdated overlay toggle (project mode): whether `O` annotations are showing.
+        self._outdated_on = False
 
     @property
     def active_dir(self) -> Path:
@@ -146,10 +157,12 @@ class LazyUvApp(App[None]):
     # Project-only: inert in both global and script mode.
     _PROJECT_ONLY_ACTIONS = frozenset({
         "sync", "sync_options", "lock", "python", "venv", "filter",
-        "workspace", "export",
+        "workspace", "export", "tree", "outdated",
     })
     # Shared by project and script mode (dispatch branches on `self.mode`).
-    _PROJECT_OR_SCRIPT_ACTIONS = frozenset({"add", "remove", "run", "open_script"})
+    _PROJECT_OR_SCRIPT_ACTIONS = frozenset({
+        "add", "remove", "run", "run_args", "open_script",
+    })
     _SCRIPT_ONLY_ACTIONS = frozenset({"exit_script"})
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -320,7 +333,12 @@ class LazyUvApp(App[None]):
     # --- selection wiring --------------------------------------------------
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
-        dep = self.query_one(DependenciesPanel).selected_dependency
+        # The tree-view modal is also a Tree whose events bubble here; only the main
+        # dependency panel drives the Details view.
+        panel = self.query_one(DependenciesPanel)
+        if event.control is not panel:
+            return
+        dep = panel.selected_dependency
         if dep is not None:
             self.query_one(DetailsPanel).show_dependency(dep)
 
@@ -611,6 +629,104 @@ class LazyUvApp(App[None]):
 
         self.push_screen(ExportScreen(self.project.groups), on_close)
 
+    # --- inspect (tree / outdated) & run-with-args (Milestone 6) -----------
+
+    def action_tree(self) -> None:
+        """Show the transitive dependency graph (read-only, `uv tree`)."""
+        if self.mode != "project" or self.project is None:
+            return
+        if self._busy:
+            self.bell()
+            return
+        self._busy = True
+        self.run_worker(self._open_tree())
+
+    async def _open_tree(self) -> None:
+        output = self.query_one(OutputPanel)
+        try:
+            code, out = await commands.run_capture(
+                commands.build_tree(), cwd=self.active_dir
+            )
+        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+            output.line(f"error: {exc}")
+            self._busy = False
+            return
+        self._busy = False
+        if code != 0:
+            output.line(f"`uv tree` failed (exit {code})")
+            return
+        self.push_screen(DependencyTreeScreen(parse_tree(out)))
+
+    def action_outdated(self) -> None:
+        """Toggle the outdated overlay: annotate deps with a newer release available."""
+        if self.mode != "project" or self.project is None:
+            return
+        if self._busy:
+            self.bell()
+            return
+        if self._outdated_on:
+            self._clear_outdated()
+            return
+        self._busy = True
+        self.query_one(DependenciesPanel).border_title = "Dependencies — checking…"
+        self.run_worker(self._load_outdated())
+
+    async def _load_outdated(self) -> None:
+        output = self.query_one(OutputPanel)
+        try:
+            code, out = await commands.run_capture(
+                commands.build_tree(outdated=True), cwd=self.active_dir
+            )
+        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+            output.line(f"error: {exc}")
+            self._busy = False
+            self._clear_outdated()  # restore the plain title
+            return
+        self._busy = False
+        if code != 0:
+            output.line(f"`uv tree --outdated` failed (exit {code})")
+            self._clear_outdated()
+            return
+        mapping = parse_outdated(out)
+        self._outdated_on = True
+        self.query_one(DependenciesPanel).set_outdated(mapping)
+        output.line(f"outdated: {len(mapping)} package(s) with a newer release")
+
+    def _clear_outdated(self) -> None:
+        self._outdated_on = False
+        self.query_one(DependenciesPanel).set_outdated({})
+
+    def action_run_args(self) -> None:
+        """Run the selected/focused script with user-supplied arguments."""
+        script_mode = self.mode == "script"
+        if script_mode:
+            target = str(self.script_path)
+        elif self.mode == "project":
+            script = self.query_one(ScriptsPanel).selected_script
+            if script is None:
+                return
+            target = script.name
+        else:
+            return
+        if self._busy:
+            self.bell()
+            return
+
+        def on_close(text: str | None) -> None:
+            if text is None:
+                return
+            try:
+                args = shlex.split(text)
+            except ValueError as exc:
+                self.query_one(OutputPanel).line(f"invalid arguments: {exc}")
+                return
+            if script_mode:
+                self._run_uv(commands.build_run_script(target, args))
+            else:
+                self._run_uv(commands.build_run(target, args))
+
+        self.push_screen(RunArgsScreen(target), on_close)
+
     # --- inline-script mode (PEP 723) --------------------------------------
 
     def action_open_script(self) -> None:
@@ -637,6 +753,7 @@ class LazyUvApp(App[None]):
             if path is None:
                 return
             self.script_path = Path(path)
+            self._clear_outdated()  # project overlay must not bleed into script deps
             self.set_focus(self.query_one(DependenciesPanel))
             self.refresh_script()
             self.refresh_bindings()  # footer shows script-mode keys
@@ -666,6 +783,7 @@ class LazyUvApp(App[None]):
         # always clears any script focus so the two never overlap.
         self.script_path = None
         self.inline_script = None
+        self._clear_outdated()  # the outdated overlay is a project-mode concept
         self.global_mode = not self.global_mode
         self.query_one("#project-panels").display = not self.global_mode
         self.query_one("#global-panels").display = self.global_mode

@@ -926,7 +926,7 @@ async def test_tools_panel_escapes_markup(monkeypatch):
         await app.workers.wait_for_complete()
         await pilot.pause()
         panel = app.query_one(ToolsPanel)
-        assert panel.selected_tool is None or True  # panel populated without error
+        assert len(panel) == 1  # panel populated (rendered the markup-y name) without raising
         # the parsed tool keeps its literal name; rendering doesn't raise
         assert app.tools and app.tools[0].name == "ev[il]"
 

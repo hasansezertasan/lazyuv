@@ -1967,3 +1967,262 @@ async def test_outdated_count_respects_filter():
             for node in group_node.children
         ]
         assert len(labels) == 1 and "httpx" in labels[0]
+
+
+# --- Milestone 7: project version (read / bump) ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_version_bump_builds_argv(monkeypatch):
+    from textual.widgets import Select
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        app.screen.query_one("#bump", Select).value = "minor"
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "version", "--bump", "minor"]
+        assert captured["cwd"] == FIXTURE
+
+
+@pytest.mark.asyncio
+async def test_version_set_overrides_bump(monkeypatch):
+    from textual.widgets import Input, Select
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        # a non-empty explicit value takes precedence over the bump select
+        app.screen.query_one("#bump", Select).value = "major"
+        app.screen.query_one("#value", Input).value = "9.9.9"
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "version", "--", "9.9.9"]
+
+
+@pytest.mark.asyncio
+async def test_version_modal_seeded_with_current():
+    app = LazyUvApp(root=FIXTURE)  # sample 0.2.0
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        # the modal is seeded from the loaded project
+        assert app.screen._name == "sample"
+        assert app.screen._current == "0.2.0"
+
+
+@pytest.mark.asyncio
+async def test_version_inert_in_script_and_global(tmp_path):
+    _write_script_project(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.check_action("version", ()) is True
+        await _enter_script_mode(pilot, app, tmp_path)
+        assert app.check_action("version", ()) is None
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("g")
+        await pilot.pause()
+        assert app.check_action("version", ()) is None
+
+
+# --- Milestone 7: review-hardening (scoping / lifecycle / error paths) ------
+
+
+@pytest.mark.asyncio
+async def test_version_scopes_to_focused_member(tmp_path, monkeypatch):
+    # The feature's core novelty: a bump targets the focused member via cwd.
+    from textual.widgets import ListView
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        idx = next(i for i, m in enumerate(app.workspace_members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        await pilot.click("#ok")  # default patch bump
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["cwd"] == tmp_path / "packages" / "alpha"
+
+
+@pytest.mark.asyncio
+async def test_version_cancel_and_escape_do_not_mutate(monkeypatch):
+    ran = []
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        ran.append(argv)
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        await pilot.click("#cancel")
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert ran == []  # neither cancel nor escape runs uv version
+
+
+@pytest.mark.asyncio
+async def test_version_busy_guard_no_modal():
+    from lazyuv.screens.version import VersionScreen
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._busy = True  # a mutation is "in flight"
+        await pilot.press("V")
+        await pilot.pause()
+        assert not isinstance(app.screen, VersionScreen)  # bell + no-op, no modal
+
+
+@pytest.mark.asyncio
+async def test_version_enter_sets_typed_value(monkeypatch):
+    from textual.widgets import Input
+
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        value = app.screen.query_one("#value", Input)
+        value.focus()
+        value.value = "3.1.4"
+        await pilot.pause()
+        await pilot.press("enter")  # submit via Enter in the input, not the button
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "version", "--", "3.1.4"]
+
+
+@pytest.mark.asyncio
+async def test_version_enter_on_empty_is_noop(monkeypatch):
+    from textual.widgets import Input
+    from lazyuv.screens.version import VersionScreen
+
+    ran = []
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        ran.append(argv)
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        app.screen.query_one("#value", Input).focus()
+        await pilot.pause()
+        await pilot.press("enter")  # empty value -> must NOT fire the seeded bump
+        await pilot.pause()
+        assert ran == []
+        assert isinstance(app.screen, VersionScreen)  # modal stays open
+
+
+@pytest.mark.asyncio
+async def test_version_bump_refreshes_displayed_version(tmp_path, monkeypatch):
+    from textual.widgets import Select
+
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "demo"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n"
+    )
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        # emulate uv writing the bumped version to pyproject
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\n"
+            'name = "demo"\n'
+            'version = "0.2.0"\n'
+            'requires-python = ">=3.14"\n'
+            "dependencies = []\n"
+        )
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.project.version == "0.1.0"
+        await pilot.press("V")
+        await pilot.pause()
+        app.screen.query_one("#bump", Select).value = "minor"
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # the read half re-runs: the new version is reflected in state + subtitle
+        assert app.project.version == "0.2.0"
+        assert "0.2.0" in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_version_failure_resets_busy(monkeypatch):
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        on_line("error: bad version")
+        return 2  # uv rejects a bad value
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("V")
+        await pilot.pause()
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app._busy is False  # not wedged after a failed mutation

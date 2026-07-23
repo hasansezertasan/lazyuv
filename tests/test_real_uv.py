@@ -21,9 +21,12 @@ from lazyuv.commands import (
     build_run,
     build_run_script,
     build_tree,
+    build_version_bump,
+    build_version_set,
     uv_available,
 )
 from lazyuv.data import (
+    load_project,
     load_script,
     parse_outdated,
     parse_pep723_block,
@@ -148,3 +151,22 @@ def test_real_run_passes_args_without_separator(tmp_path):
     # args reach the program verbatim, and NO literal "--" was injected
     assert "GOT ['--verbose', 'pos']" in result.stdout
     assert "'--'" not in result.stdout
+
+
+def test_real_version_bump_rewrites_pyproject(tmp_path):
+    _init = _run(["uv", "init", "--quiet", "."], tmp_path)
+    _skip_only_if_offline(_init)
+    # dep-less project -> re-lock is offline; bump 0.1.0 -> 0.1.1
+    result = _run(build_version_bump("patch"), tmp_path)
+    _skip_only_if_offline(result)
+    proj = load_project(tmp_path).project
+    assert proj is not None and proj.version == "0.1.1"
+
+
+def test_real_version_set_exact(tmp_path):
+    _init = _run(["uv", "init", "--quiet", "."], tmp_path)
+    _skip_only_if_offline(_init)
+    result = _run(build_version_set("9.9.9"), tmp_path)
+    _skip_only_if_offline(result)
+    proj = load_project(tmp_path).project
+    assert proj is not None and proj.version == "9.9.9"

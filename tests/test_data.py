@@ -460,3 +460,90 @@ def test_directory_size_on_a_file_is_zero(tmp_path):
     f.write_bytes(b"x" * 100)
     # a non-directory path yields 0 (documented "0 if missing/unreadable")
     assert directory_size(f) == 0
+
+
+# --- M4: sources & workspaces ----------------------------------------------
+
+
+def test_source_detail_for_each_kind():
+    from lazyuv.data import _source_detail
+
+    assert _source_detail({"workspace": True}) == "workspace"
+    assert _source_detail({"git": "https://x/y.git"}) == "git (https://x/y.git)"
+    assert _source_detail({"path": "../lib"}) == "path (../lib)"
+    assert _source_detail({"path": "../lib", "editable": True}) == "path (../lib) editable"
+    assert _source_detail({"editable": True}) == "editable"
+    assert _source_detail("nonsense") == ""
+
+
+def test_load_attaches_source_detail(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "x"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["mylib", "httpx"]\n\n'
+        "[tool.uv.sources]\n"
+        "mylib = { workspace = true }\n"
+    )
+    proj = load_project(tmp_path).project
+    by_name = {d.name: d for d in proj.dependencies}
+    assert by_name["mylib"].source_detail == "workspace"
+    assert by_name["httpx"].source_detail == ""  # no sources entry
+
+
+def _write_workspace(root: Path) -> None:
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "wsroot"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        "dependencies = []\n\n"
+        "[tool.uv.workspace]\n"
+        'members = ["packages/*"]\n'
+        'exclude = ["packages/skip"]\n'
+    )
+    for name in ("alpha", "beta", "skip"):
+        d = root / "packages" / name
+        d.mkdir(parents=True)
+        (d / "pyproject.toml").write_text(
+            "[project]\n"
+            f'name = "{name}"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.14"\n'
+            "dependencies = []\n"
+        )
+    # a directory that matches the glob but has no pyproject -> not a member
+    (root / "packages" / "notapkg").mkdir()
+
+
+def test_workspace_members_resolved(tmp_path):
+    _write_workspace(tmp_path)
+    proj = load_project(tmp_path).project
+    members = proj.workspace_members
+    names = [m.name for m in members]
+    assert names[0] == "wsroot" and members[0].is_root  # root first
+    assert "alpha" in names and "beta" in names
+    assert "skip" not in names  # excluded
+    assert all(m.name != "notapkg" for m in members)  # no pyproject -> skipped
+    alpha = next(m for m in members if m.name == "alpha")
+    assert alpha.directory == "packages/alpha"
+
+
+def test_non_workspace_has_no_members():
+    proj = load_project(FIXTURE).project
+    assert proj.workspace_members == []
+
+
+def test_load_member_directory_scopes_to_member(tmp_path):
+    _write_workspace(tmp_path)
+    (tmp_path / "packages" / "alpha" / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "alpha"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["rich"]\n'
+    )
+    member = load_project(tmp_path / "packages" / "alpha").project
+    assert member.name == "alpha"
+    assert [d.name for d in member.dependencies] == ["rich"]

@@ -17,8 +17,11 @@ _HELP = """[b]lazyuv keybindings[/b]
   S                sync with options (extras / groups / flags)
   l                lock
   r                run selected script
+  u                upgrade selected package (uv lock --upgrade-package)
   p                manage Python versions
   v                create / recreate the venv
+  w                switch workspace member
+  e                export requirements (uv export)
   /                filter dependencies
   g                toggle project / global mode
   ?                toggle this help

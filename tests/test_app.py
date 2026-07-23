@@ -952,3 +952,171 @@ async def test_more_mode_gated_keys(monkeypatch):
             await pilot.press(key)
             await pilot.pause()
         assert "argv" not in captured
+
+
+# --- Milestone 4: workspaces & advanced deps -------------------------------
+
+
+def _write_ws(root: Path) -> None:
+    (root / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "wsroot"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.14"\n'
+        'dependencies = ["httpx"]\n\n'
+        "[tool.uv.workspace]\n"
+        'members = ["packages/*"]\n\n'
+        "[tool.uv.sources]\n"
+        "alpha = { workspace = true }\n"
+    )
+    for name, dep in (("alpha", "rich"), ("beta", "click")):
+        d = root / "packages" / name
+        d.mkdir(parents=True)
+        (d / "pyproject.toml").write_text(
+            "[project]\n"
+            f'name = "{name}"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.14"\n'
+            f'dependencies = ["{dep}"]\n'
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_panel_shows_and_switches(tmp_path):
+    from lazyuv.widgets.workspace import WorkspacePanel
+
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        wp = app.query_one(WorkspacePanel)
+        assert wp.display is True
+        assert [m.name for m in app.workspace_members][0] == "wsroot"
+        assert {m.name for m in app.workspace_members} >= {"wsroot", "alpha", "beta"}
+        # switch to member "alpha"
+        await pilot.press("w")
+        await pilot.pause()
+        from textual.widgets import ListView
+
+        members = app.workspace_members
+        idx = next(i for i, m in enumerate(members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        assert app.focused_member is not None and app.focused_member.name == "alpha"
+        # deps tree is now scoped to alpha's own dependency ("rich")
+        labels = [
+            str(node.label)
+            for group_node in app.query_one(DependenciesPanel).root.children
+            for node in group_node.children
+        ]
+        assert any("rich" in lb for lb in labels)
+        assert "wsroot" in app.sub_title and "alpha" in app.sub_title
+
+
+@pytest.mark.asyncio
+async def test_no_workspace_panel_hidden():
+    from lazyuv.widgets.workspace import WorkspacePanel
+
+    app = LazyUvApp(root=FIXTURE)  # sample project is not a workspace
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.query_one(WorkspacePanel).display is False
+        assert app.workspace_members == []
+
+
+@pytest.mark.asyncio
+async def test_targeted_upgrade_builds_argv(monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        leaf = next(
+            node
+            for group_node in panel.root.children
+            for node in group_node.children
+            if node.data is not None and node.data.name == "httpx"
+        )
+        panel.move_cursor(leaf)
+        await pilot.pause()
+        await pilot.press("u")  # upgrade selected package
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == ["uv", "lock", "--upgrade-package", "httpx"]
+
+
+@pytest.mark.asyncio
+async def test_export_flow_builds_argv(monkeypatch):
+    captured = {}
+
+    async def fake_run_streaming(argv, on_line, cwd=None):
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("lazyuv.commands.run_streaming", fake_run_streaming)
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        from textual.widgets import Checkbox
+
+        app.screen.query_one("#export-no-hashes", Checkbox).value = True
+        await pilot.click("#ok")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == [
+            "uv", "export", "--format", "requirements.txt",
+            "--no-hashes", "-o", "requirements.txt",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_details_shows_source_via_line(tmp_path):
+    from lazyuv.widgets.details import DetailsPanel
+
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # switch to member alpha whose own dep "rich" has no source; instead check
+        # the root project where "alpha" dep has a workspace source
+        dep = next(d for d in app.project.dependencies if d.name == "httpx")
+        app.query_one(DetailsPanel).show_dependency(dep)
+        # httpx has no source entry -> no via line; now render a sourced dep
+        from lazyuv.models import Dependency
+
+        sourced = Dependency(name="alpha", spec="", group="main", source_detail="workspace")
+        app.query_one(DetailsPanel).show_dependency(sourced)
+        assert "via:" in str(app.query_one(DetailsPanel).render())
+        assert "workspace" in str(app.query_one(DetailsPanel).render())
+
+
+@pytest.mark.asyncio
+async def test_workspace_export_gated_in_global(monkeypatch):
+    from lazyuv.screens.export import ExportScreen
+    from lazyuv.screens.workspace import WorkspaceSwitchScreen
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", _global_capture())
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        assert not isinstance(app.screen, WorkspaceSwitchScreen)
+        await pilot.press("e")
+        await pilot.pause()
+        assert not isinstance(app.screen, ExportScreen)

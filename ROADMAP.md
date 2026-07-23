@@ -119,10 +119,24 @@ obvious.
 **Open questions:** is "mode toggle" the right model, or should global tools be a
 peer top-level view (tab bar)? How do we represent cache size without a slow scan?
 
-## Milestone 4 — Workspaces & advanced dependencies
+## Milestone 4 — Workspaces & advanced dependencies — *shipped (partial)*
 
 **Intent:** support real-world project shapes and the dependency operations power
 users reach for.
+
+*Implemented* (design:
+`docs/superpowers/specs/2026-07-23-workspaces-advanced-deps-design.md`). Detects
+`[tool.uv.workspace]` and shows a **Workspace** panel; `w` switches the focused
+member, re-scoping the whole project view via `load_project(member_dir)` and running
+member commands in that dir (the "constrained project switcher"). `u` runs a
+**targeted upgrade** (`uv lock --upgrade-package <dep>`) on the selected dependency;
+`e` opens an **export** modal (`uv export` with format / `--no-hashes` / `--no-dev` /
+extras / groups / `-o`). `[tool.uv.sources]` is parsed and each dependency's origin
+(workspace / git / path / url / editable) shows as a `via:` line in Details.
+**Deferred** (resolves the open question): *editing* sources and managing
+`[[tool.uv.index]]` from the TUI — safer in `$EDITOR`; the read path surfaces them
+for inspection. The outdated view remains a backlog item that will pair with the
+targeted upgrade.
 
 **Features:**
 - **Workspaces** (`[tool.uv.workspace]`): list members, show which member is

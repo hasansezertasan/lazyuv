@@ -20,14 +20,16 @@ from lazyuv.data import (
     parse_tool_list,
     parse_uv_version,
 )
-from lazyuv.models import LoadStatus, Project, Tool
+from lazyuv.models import LoadStatus, Project, Tool, WorkspaceMember
 from lazyuv.screens.add_dependency import AddDependencyScreen
 from lazyuv.screens.confirm import ConfirmScreen
+from lazyuv.screens.export import ExportScreen
 from lazyuv.screens.filter import FilterScreen
 from lazyuv.screens.help import HelpScreen
 from lazyuv.screens.python import PythonPickerScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.screens.tool_install import ToolInstallScreen
+from lazyuv.screens.workspace import WorkspaceSwitchScreen
 from lazyuv.widgets.cache import CachePanel
 from lazyuv.widgets.dependencies import DependenciesPanel
 from lazyuv.widgets.details import DetailsPanel
@@ -35,6 +37,7 @@ from lazyuv.widgets.environment import EnvironmentPanel
 from lazyuv.widgets.output import OutputPanel
 from lazyuv.widgets.scripts import ScriptsPanel
 from lazyuv.widgets.tools import ToolsPanel
+from lazyuv.widgets.workspace import WorkspacePanel
 
 STYLES = Path(__file__).parent / "styles.tcss"
 
@@ -54,11 +57,14 @@ class LazyUvApp(App[None]):
         Binding("r", "run", "run"),
         Binding("p", "python", "python"),
         Binding("v", "venv", "venv"),
+        Binding("w", "workspace", "workspace"),
+        Binding("e", "export", "export"),
         Binding("slash", "filter", "filter", key_display="/"),
         Binding("g", "toggle_mode", "global"),
+        # `u` upgrades the selected thing in either mode (tool / package)
+        Binding("u", "upgrade", "upgrade"),
         # global-mode actions (no-op in project mode)
         Binding("i", "tool_install", "install tool"),
-        Binding("u", "tool_upgrade", "upgrade"),
         Binding("U", "tool_upgrade_all", "upgrade all", key_display="U"),
         Binding("x", "tool_uninstall", "uninstall"),
         Binding("c", "cache_clean", "cache clean"),
@@ -77,12 +83,25 @@ class LazyUvApp(App[None]):
         self.tools: list[Tool] = []
         self.cache_dir: str | None = None
         self.uv_version: str = ""
+        # Workspace state: members come from the workspace root; focus scopes the
+        # loaded project + command cwd to a member. None focus == the root.
+        self.workspace_members: list[WorkspaceMember] = []
+        self.workspace_root_name: str = ""
+        self.focused_member: WorkspaceMember | None = None
+
+    @property
+    def active_dir(self) -> Path:
+        """The directory the project view is scoped to (root, or a focused member)."""
+        if self.focused_member is not None:
+            return self.root / self.focused_member.directory
+        return self.root
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="body"):
             with Vertical(id="left"):
                 with Vertical(id="project-panels"):
+                    yield WorkspacePanel()
                     yield EnvironmentPanel()
                     yield DependenciesPanel()
                     yield ScriptsPanel()
@@ -102,10 +121,11 @@ class LazyUvApp(App[None]):
     })
     _PROJECT_ACTIONS = frozenset({
         "add", "remove", "sync", "sync_options", "lock", "run", "python",
-        "venv", "filter",
+        "venv", "filter", "workspace", "export",
     })
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # `upgrade` is universal (tool in global mode, package in project mode).
         if action in self._GLOBAL_ACTIONS:
             return True if self.global_mode else None
         if action in self._PROJECT_ACTIONS:
@@ -114,6 +134,7 @@ class LazyUvApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one("#global-panels").display = False
+        self.query_one(WorkspacePanel).display = False
         self.refresh_project()
         self.run_worker(self._load_uv_version())
 
@@ -128,7 +149,7 @@ class LazyUvApp(App[None]):
     # --- loading -----------------------------------------------------------
 
     def refresh_project(self) -> None:
-        result = load_project(self.root)
+        result = load_project(self.active_dir)
         details = self.query_one(DetailsPanel)
         if result.status is LoadStatus.NOT_A_PROJECT:
             self._clear_project_panels()
@@ -140,6 +161,12 @@ class LazyUvApp(App[None]):
             return
 
         self.project = result.project
+        # Workspace membership is a property of the ROOT project; only refresh it
+        # when the root is loaded (a focused member's pyproject has no workspace).
+        if self.focused_member is None or self.focused_member.is_root:
+            self.workspace_members = self.project.workspace_members
+            self.workspace_root_name = self.project.name
+        self._update_workspace_panel()
         self._update_subtitle()
         panel = self.query_one(DependenciesPanel)
         previous = panel.selected_dependency
@@ -153,9 +180,20 @@ class LazyUvApp(App[None]):
         self.query_one(ScriptsPanel).load(self.project.scripts)
         self.query_one(EnvironmentPanel).show(self.project.environment)
 
+    def _update_workspace_panel(self) -> None:
+        panel = self.query_one(WorkspacePanel)
+        has_workspace = bool(self.workspace_members)
+        panel.display = has_workspace
+        if has_workspace:
+            focused_dir = self.focused_member.directory if self.focused_member else ""
+            panel.show(self.workspace_members, focused_dir)
+
     def _clear_project_panels(self) -> None:
         """Reset project-scoped views so a lost/invalid project shows no stale data."""
         self.project = None
+        if self.focused_member is None or self.focused_member.is_root:
+            self.workspace_members = []
+            self.query_one(WorkspacePanel).display = False
         self._update_subtitle()
         self.query_one(DependenciesPanel).set_filter(self._filter_text, [])
         self.query_one(ScriptsPanel).load([])
@@ -166,7 +204,15 @@ class LazyUvApp(App[None]):
         if self.global_mode:
             parts.append("global")
         elif self.project is not None:
-            parts.append(f"{self.project.name} {self.project.version}")
+            name = f"{self.project.name} {self.project.version}"
+            # In a focused non-root member, prefix the workspace root: "root · member".
+            if (
+                self.focused_member is not None
+                and not self.focused_member.is_root
+                and self.workspace_root_name
+            ):
+                name = f"{self.workspace_root_name} · {name}"
+            parts.append(name)
         if self.uv_version:
             parts.append(f"uv {self.uv_version}")
         self.sub_title = " · ".join(parts)
@@ -233,8 +279,10 @@ class LazyUvApp(App[None]):
     async def _run_uv_worker(self, argv: list[str]) -> None:
         output = self.query_one(OutputPanel)
         try:
+            # Project mutations run in the focused member's dir; global (tool/cache)
+            # commands ignore project cwd, so active_dir is safe for both.
             exit_code = await commands.run_streaming(
-                argv, on_line=output.line, cwd=self.root
+                argv, on_line=output.line, cwd=self.active_dir
             )
             output.finish(exit_code)
         except Exception as exc:  # noqa: BLE001 - surface any launch/stream failure
@@ -400,6 +448,47 @@ class LazyUvApp(App[None]):
 
         self.push_screen(FilterScreen(self._filter_text), on_close)
 
+    def action_workspace(self) -> None:
+        if self.global_mode or not self.workspace_members:
+            return
+
+        def on_close(directory: str | None) -> None:
+            if directory is None:
+                return
+            member = next(
+                (m for m in self.workspace_members if m.directory == directory), None
+            )
+            if member is None:
+                return
+            self.focused_member = None if member.is_root else member
+            self._filter_text = ""
+            self.refresh_project()
+
+        focused_dir = self.focused_member.directory if self.focused_member else ""
+        self.push_screen(
+            WorkspaceSwitchScreen(self.workspace_members, focused_dir), on_close
+        )
+
+    def action_export(self) -> None:
+        if self.global_mode or self.project is None:
+            return
+
+        def on_close(result: tuple[str, bool, bool, list[str], list[str]] | None) -> None:
+            if result is None:
+                return
+            output_file, no_hashes, no_dev, extras, groups = result
+            self._run_uv(
+                commands.build_export(
+                    no_hashes=no_hashes,
+                    no_dev=no_dev,
+                    extras=extras,
+                    groups=groups,
+                    output_file=output_file,
+                )
+            )
+
+        self.push_screen(ExportScreen(self.project.groups), on_close)
+
     # --- global mode (tools / cache / self) --------------------------------
 
     def action_toggle_mode(self) -> None:
@@ -431,12 +520,16 @@ class LazyUvApp(App[None]):
 
         self.push_screen(ToolInstallScreen(), on_close)
 
-    def action_tool_upgrade(self) -> None:
-        if not self.global_mode:
-            return
-        tool = self.query_one(ToolsPanel).selected_tool
-        if tool is not None:
-            self._run_uv(commands.build_tool_upgrade(tool.name))
+    def action_upgrade(self) -> None:
+        """Upgrade the selected thing: a tool (global mode) or a package (project)."""
+        if self.global_mode:
+            tool = self.query_one(ToolsPanel).selected_tool
+            if tool is not None:
+                self._run_uv(commands.build_tool_upgrade(tool.name))
+        else:
+            dep = self.query_one(DependenciesPanel).selected_dependency
+            if dep is not None:
+                self._run_uv(commands.build_lock_upgrade_package(dep.name))
 
     def action_tool_upgrade_all(self) -> None:
         if not self.global_mode:

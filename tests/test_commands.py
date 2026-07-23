@@ -239,3 +239,32 @@ def test_build_cache_and_self_commands():
     assert build_cache_prune() == ["uv", "cache", "prune"]
     assert build_uv_version() == ["uv", "--version"]
     assert build_self_update() == ["uv", "self", "update"]
+
+
+def test_build_lock_upgrade_package():
+    from lazyuv.commands import build_lock_upgrade_package
+
+    assert build_lock_upgrade_package("httpx") == [
+        "uv", "lock", "--upgrade-package", "httpx",
+    ]
+
+
+def test_build_export_default_and_options():
+    from lazyuv.commands import build_export
+
+    assert build_export() == ["uv", "export", "--format", "requirements.txt"]
+    assert build_export(
+        fmt="requirements.txt",
+        no_hashes=True,
+        no_dev=True,
+        extras=["cli"],
+        groups=["docs"],
+        output_file="reqs.txt",
+    ) == [
+        "uv", "export", "--format", "requirements.txt",
+        "--extra", "cli",
+        "--group", "docs",
+        "--no-hashes",
+        "--no-dev",
+        "-o", "reqs.txt",
+    ]

@@ -64,6 +64,34 @@ def build_lock() -> list[str]:
     return ["uv", "lock"]
 
 
+def build_lock_upgrade_package(name: str) -> list[str]:
+    return ["uv", "lock", "--upgrade-package", name]
+
+
+def build_export(
+    *,
+    fmt: str = "requirements.txt",
+    no_hashes: bool = False,
+    no_dev: bool = False,
+    extras: Sequence[str] = (),
+    groups: Sequence[str] = (),
+    output_file: str | None = None,
+) -> list[str]:
+    """Build `uv export`. Defaults to a requirements.txt export to stdout."""
+    argv = ["uv", "export", "--format", fmt]
+    for extra in extras:
+        argv += ["--extra", extra]
+    for group in groups:
+        argv += ["--group", group]
+    if no_hashes:
+        argv.append("--no-hashes")
+    if no_dev:
+        argv.append("--no-dev")
+    if output_file:
+        argv += ["-o", output_file]
+    return argv
+
+
 def build_run(script: str) -> list[str]:
     return ["uv", "run", script]
 

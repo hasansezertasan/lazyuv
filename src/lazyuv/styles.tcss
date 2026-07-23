@@ -20,6 +20,7 @@ Screen {
 
 #details { height: 60%; }
 #output { height: 40%; }
+#workspace { height: auto; }
 #environment { height: auto; min-height: 5; }
 #dependencies { height: 1fr; min-height: 5; }
 #scripts { height: 40%; }
@@ -27,13 +28,13 @@ Screen {
 #cache { height: auto; }
 
 DependenciesPanel, DetailsPanel, OutputPanel, ScriptsPanel, EnvironmentPanel,
-ToolsPanel, CachePanel {
+ToolsPanel, CachePanel, WorkspacePanel {
     border: round $primary;
     padding: 0 1;
 }
 
 #add-dialog, #confirm-dialog, #help-dialog, #python-dialog, #sync-dialog,
-#tool-install-dialog {
+#tool-install-dialog, #workspace-dialog, #export-dialog {
     background: $panel;
     border: thick $primary;
     padding: 1 2;
@@ -44,7 +45,8 @@ ToolsPanel, CachePanel {
 
 #python-list { height: auto; max-height: 12; }
 #python-buttons { height: auto; }
-#sync-dialog SelectionList { height: auto; max-height: 6; }
+#sync-dialog SelectionList, #export-dialog SelectionList { height: auto; max-height: 6; }
+#workspace-list { height: auto; max-height: 10; }
 
 #filter-dialog {
     background: $panel;

@@ -3,6 +3,11 @@ name: Lint PR
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
+concurrency:
+  # Serialize per-PR so an older run can't finish late and recreate/delete the
+  # sticky comment out of order on rapid title edits.
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   main:
     name: Validate PR title

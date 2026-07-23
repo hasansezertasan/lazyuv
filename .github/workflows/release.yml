@@ -9,6 +9,10 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     name: Release Please
+    # workflow_dispatch can target any ref that contains this file; a manual run
+    # from a non-main branch/tag must not obtain release + PyPI-publish credentials.
+    # Downstream jobs need this one, so guarding it here gates the whole pipeline.
+    if: ${{ github.ref == 'refs/heads/main' }}
     permissions:
       contents: write
       pull-requests: write

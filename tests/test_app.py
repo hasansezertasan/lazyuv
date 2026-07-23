@@ -1369,3 +1369,29 @@ async def test_toggle_global_clears_script_focus(tmp_path):
         await pilot.pause()
         assert app.mode == "global"
         assert app.script_path is None
+
+
+@pytest.mark.asyncio
+async def test_script_picker_manual_path_opens_omitted_script(tmp_path, monkeypatch):
+    from textual.widgets import Input
+
+    # Simulate a truncated scan that omitted the target script entirely.
+    monkeypatch.setattr("lazyuv.data.find_scripts", lambda root: (["other.py"], True))
+
+    _write_script_project(tmp_path)  # writes demo.py (the "omitted" target)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("o")
+        await pilot.pause()
+        app.screen.query_one("#script-path", Input).value = "demo.py"
+        await pilot.click("#ok")
+        await pilot.pause()
+        assert app.mode == "script"
+        assert str(app.script_path) == "demo.py"
+        labels = [
+            str(node.label)
+            for group_node in app.query_one(DependenciesPanel).root.children
+            for node in group_node.children
+        ]
+        assert any("requests" in lb for lb in labels)

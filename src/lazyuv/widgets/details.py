@@ -12,7 +12,10 @@ class DetailsPanel(Static):
     BORDER_TITLE = "Details"
 
     def show_dependency(self, dep: Dependency) -> None:
-        spec = dep.spec or "(any)"
+        # name/spec are file-sourced (pyproject or a script's PEP 723 block), so escape
+        # them like the other panels rather than let a stray bracket render as markup.
+        name = escape(dep.name)
+        spec = escape(dep.spec) if dep.spec else "(any)"
         if dep.locked_versions:
             version = " / ".join(dep.locked_versions)
             extra_line = f"\nlocked: {len(dep.locked_versions)} versions in lock"
@@ -22,7 +25,7 @@ class DetailsPanel(Static):
         # `via` shows the [tool.uv.sources] entry (workspace/git/path/...) when set.
         via_line = f"\nvia:    {escape(dep.source_detail)}" if dep.source_detail else ""
         self.update(
-            f"[b]{dep.name}[/b]  {version}\n"
+            f"[b]{name}[/b]  {version}\n"
             f"spec:   {spec}\n"
             f"group:  {dep.group}\n"
             f"source: {dep.source}"

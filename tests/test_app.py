@@ -1584,3 +1584,30 @@ async def test_m6_mode_gating(tmp_path):
         assert app.check_action("tree", ()) is None
         assert app.check_action("outdated", ()) is None
         assert app.check_action("run_args", ()) is None
+
+
+@pytest.mark.asyncio
+async def test_outdated_count_matches_annotations_after_upgrade(monkeypatch):
+    # Regression: once resolved == latest (post-upgrade), the dep is no longer shown
+    # as outdated AND must not be counted in the title — the two use one predicate.
+    from lazyuv.models import Dependency
+
+    panel_deps = [
+        Dependency(name="httpx", spec="", group="main", resolved_version="0.29.0"),
+    ]
+    from lazyuv.widgets.dependencies import DependenciesPanel
+
+    app = LazyUvApp(root=FIXTURE)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one(DependenciesPanel)
+        panel.set_filter("", panel_deps)
+        # latest == resolved -> not outdated: no annotation, count 0 (not 1)
+        panel.set_outdated({"httpx": "0.29.0"})
+        assert "outdated: 0" in panel.border_title
+        labels = [
+            str(node.label)
+            for group_node in panel.root.children
+            for node in group_node.children
+        ]
+        assert not any("→" in lb for lb in labels)

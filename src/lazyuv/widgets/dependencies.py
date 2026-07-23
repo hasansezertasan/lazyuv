@@ -32,12 +32,23 @@ class DependenciesPanel(Tree):
         self._outdated = outdated
         self._repopulate()
 
+    def _latest_for(self, dep: Dependency) -> str | None:
+        """The newer version to show for `dep`, or None when it's not outdated.
+
+        Single source of truth for both the title count and the leaf annotation, so
+        they can never disagree (e.g. after an upgrade makes resolved == latest).
+        """
+        latest = self._outdated.get(dep.name)
+        if latest and latest != dep.resolved_version:
+            return latest
+        return None
+
     def _repopulate(self) -> None:
         title = "Dependencies"
         if self._filter:
             title += f" — filter: {self._filter}"
         if self._outdated:
-            n = sum(1 for d in self._dependencies if d.name in self._outdated)
+            n = sum(1 for d in self._dependencies if self._latest_for(d) is not None)
             title += f" — outdated: {n}"
         self.border_title = title
         self.clear()
@@ -78,8 +89,8 @@ class DependenciesPanel(Tree):
                     version = dep.resolved_version or "—"
                 # When the outdated overlay is on and this dep has a newer release,
                 # show `cur → latest` so the eye lands on what `u` would upgrade.
-                latest = self._outdated.get(dep.name)
-                if latest and latest != dep.resolved_version:
+                latest = self._latest_for(dep)
+                if latest is not None:
                     version = f"{version} → {latest}"
                 branch.add_leaf(f"{dep.name}  {version}", data=dep)
 

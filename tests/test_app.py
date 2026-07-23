@@ -1611,3 +1611,62 @@ async def test_outdated_count_matches_annotations_after_upgrade(monkeypatch):
             for node in group_node.children
         ]
         assert not any("→" in lb for lb in labels)
+
+
+@pytest.mark.asyncio
+async def test_tree_scopes_to_focused_member(tmp_path, monkeypatch):
+    # uv tree is workspace-global; a focused member must be targeted with --package.
+    from textual.widgets import ListView
+
+    captured = {}
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            captured["argv"] = argv
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # focus member "alpha"
+        await pilot.press("w")
+        await pilot.pause()
+        members = app.workspace_members
+        idx = next(i for i, m in enumerate(members) if m.name == "alpha")
+        app.screen.query_one("#workspace-list", ListView).index = idx
+        await pilot.pause()
+        await pilot.click("#ok")
+        await pilot.pause()
+        # now request the tree; the query must scope to --package alpha
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert captured["argv"] == [
+            "uv", "tree", "--format", "json", "--frozen", "--package", "alpha",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_tree_no_package_at_workspace_root(tmp_path, monkeypatch):
+    captured = {}
+
+    async def fake_run_capture(argv, cwd=None):
+        if "tree" in argv:
+            captured["argv"] = argv
+            return 0, _APP_TREE_JSON
+        return 0, "uv 0.11.31"
+
+    monkeypatch.setattr("lazyuv.commands.run_capture", fake_run_capture)
+
+    _write_ws(tmp_path)
+    app = LazyUvApp(root=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("t")  # root focused -> no --package
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "--package" not in captured["argv"]

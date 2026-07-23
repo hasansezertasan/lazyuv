@@ -99,18 +99,27 @@ def build_run(script: str, args: Sequence[str] = ()) -> list[str]:
     return ["uv", "run", script, *args]
 
 
-def build_tree(*, outdated: bool = False, frozen: bool = True) -> list[str]:
+def build_tree(
+    *, outdated: bool = False, frozen: bool = True, package: str | None = None
+) -> list[str]:
     """Build `uv tree --format json` (a read-only query, run via run_capture).
 
     `--frozen` keeps it read-only (never rewrites the lock). `--outdated` adds a
     `latest_version` to each node (queries the network for latest releases). The
     `--format json` experimental notice goes to stderr, which run_capture discards.
+
+    `package` scopes the tree to one workspace member. Unlike other commands, `uv
+    tree` is NOT scoped by cwd — from a member directory it still emits the whole
+    workspace — so a focused non-root member must be targeted with `--package`
+    (verified on uv 0.11.31).
     """
     argv = ["uv", "tree", "--format", "json"]
     if frozen:
         argv.append("--frozen")
     if outdated:
         argv.append("--outdated")
+    if package:
+        argv += ["--package", package]
     return argv
 
 

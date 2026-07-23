@@ -93,6 +93,17 @@ def test_build_tree_not_frozen():
     assert build_tree(frozen=False) == ["uv", "tree", "--format", "json"]
 
 
+def test_build_tree_scoped_to_package():
+    # uv tree is workspace-global (not cwd-scoped), so a focused member needs --package.
+    assert build_tree(package="alpha") == [
+        "uv", "tree", "--format", "json", "--frozen", "--package", "alpha",
+    ]
+    assert build_tree(outdated=True, package="alpha") == [
+        "uv", "tree", "--format", "json", "--frozen", "--outdated",
+        "--package", "alpha",
+    ]
+
+
 def test_build_add_optional_group():
     assert build_add(["typer"], group="cli", kind="extra") == [
         "uv", "add", "--optional", "cli", "typer",

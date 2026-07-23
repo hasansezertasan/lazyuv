@@ -119,6 +119,17 @@ class LazyUvApp(App[None]):
         return self.root
 
     @property
+    def _focused_package(self) -> str | None:
+        """The focused workspace member's package name, or None (root / no workspace).
+
+        `uv tree` is workspace-global and not cwd-scoped, so a focused non-root member
+        must be targeted with `--package`.
+        """
+        if self.focused_member is not None and not self.focused_member.is_root:
+            return self.focused_member.name
+        return None
+
+    @property
     def mode(self) -> str:
         """The active top-level mode: 'global', 'script', or 'project' (default).
 
@@ -645,7 +656,7 @@ class LazyUvApp(App[None]):
         output = self.query_one(OutputPanel)
         try:
             code, out = await commands.run_capture(
-                commands.build_tree(), cwd=self.active_dir
+                commands.build_tree(package=self._focused_package), cwd=self.active_dir
             )
         except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
             output.line(f"error: {exc}")
@@ -675,7 +686,8 @@ class LazyUvApp(App[None]):
         output = self.query_one(OutputPanel)
         try:
             code, out = await commands.run_capture(
-                commands.build_tree(outdated=True), cwd=self.active_dir
+                commands.build_tree(outdated=True, package=self._focused_package),
+                cwd=self.active_dir,
             )
         except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
             output.line(f"error: {exc}")

@@ -71,7 +71,8 @@ def build_version_bump(bump: str) -> list[str]:
     return ["uv", "version", "--bump", bump]
 
 def build_version_set(value: str) -> list[str]:
-    return ["uv", "version", value]
+    # `--` guards a value beginning with `-` (uv would otherwise parse it as a flag)
+    return ["uv", "version", "--", value]
 ```
 
 ## UI (`app.py`, `screens/version.py`)

@@ -347,3 +347,8 @@ def test_build_version_bump():
 
 def test_build_version_set():
     assert build_version_set("1.2.3") == ["uv", "version", "--", "1.2.3"]
+
+
+def test_build_version_set_guards_leading_dash():
+    # The `--` is load-bearing here: without it uv would parse `-1` as an option.
+    assert build_version_set("-1") == ["uv", "version", "--", "-1"]

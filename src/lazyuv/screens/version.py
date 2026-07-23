@@ -45,7 +45,11 @@ class VersionScreen(ModalScreen[tuple[str, str] | None]):
         self.dismiss(None if event.button.id == "cancel" else self._result())
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(self._result())
+        # Enter in the value field commits ONLY a typed explicit version. An empty
+        # Enter must not silently fire the seeded bump (that's what Apply is for),
+        # so it's a no-op and the modal stays open.
+        if event.value.strip():
+            self.dismiss(("set", event.value.strip()))
 
     def key_escape(self) -> None:
         self.dismiss(None)

@@ -6,40 +6,38 @@ license = "MIT"
 dynamic = ["version"]
 authors = [{ name = "Hasan Sezer Taşan", email = "hasansezertasan@gmail.com" }]
 maintainers = [
-    { name = "Hasan Sezer Taşan", email = "hasansezertasan@gmail.com" },
+  { name = "Hasan Sezer Taşan", email = "hasansezertasan@gmail.com" },
 ]
 keywords = [
-    "cli",
-    "command-line",
-    "dependency-management",
-    "developer-tools",
-    "packaging",
-    "terminal",
-    "textual",
-    "tui",
-    "uv",
+  "cli",
+  "command-line",
+  "dependency-management",
+  "developer-tools",
+  "packaging",
+  "terminal",
+  "textual",
+  "tui",
+  "uv",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Natural Language :: English",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Topic :: Software Development",
-    "Topic :: System :: Installation/Setup",
-    "Topic :: Utilities",
-    "Typing :: Typed",
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Software Development",
+  "Topic :: System :: Installation/Setup",
+  "Topic :: Utilities",
+  "Typing :: Typed",
 ]
 requires-python = ">=3.14"
-dependencies = [
-    "textual>=8,<9",
-]
+dependencies = ["textual>=8,<9"]
 
 [project.urls]
 changelog = "https://github.com/hasansezertasan/lazyuv/blob/main/CHANGELOG.md"
@@ -54,33 +52,33 @@ lazyuv = "lazyuv.app:main"
 
 [dependency-groups]
 dev = [
-    "textual-dev>=1.5",
-    "tox>=4.54.0",
-    "tox-uv>=1.35.2",
-    "prek>=0.3.0",
-    { include-group = "lint" },
-    { include-group = "test" },
+  "textual-dev>=1.5",
+  "tox>=4.54.0",
+  "tox-uv>=1.35.2",
+  "prek>=0.3.0",
+  { include-group = "lint" },
+  { include-group = "test" },
 ]
 lint = [
-    "actionlint-py==1.7.12.24",
-    "google-yamlfmt==0.21.0",
-    "mypy==2.3.0",
-    "pyrefly==1.1.1",
-    "pyright==1.1.411",
-    "ruff==0.15.22",
-    "slotscheck==0.20.1",
-    "taplo==0.9.3",
-    "ty==0.0.62",
-    "typos==1.48.0",
-    "validate-pyproject[all]==0.25",
-    "vulture==2.16",
+  "actionlint-py==1.7.12.24",
+  "google-yamlfmt==0.21.0",
+  "mypy==2.3.0",
+  "pyrefly==1.1.1",
+  "pyright==1.1.411",
+  "ruff==0.15.22",
+  "slotscheck==0.20.1",
+  "taplo==0.9.3",
+  "ty==0.0.62",
+  "typos==1.48.0",
+  "validate-pyproject[all]==0.25",
+  "vulture==2.16",
 ]
 test = [
-    "coverage[toml]==7.15.2",
-    "pytest-asyncio>=0.23",
-    "pytest-rerunfailures==16.4",
-    "pytest-xdist[psutil]==3.8.0",
-    "pytest==9.1.1",
+  "coverage[toml]==7.15.2",
+  "pytest-asyncio>=0.23",
+  "pytest-rerunfailures==16.4",
+  "pytest-xdist[psutil]==3.8.0",
+  "pytest==9.1.1",
 ]
 
 [build-system]
@@ -156,14 +154,14 @@ strict-imports = false
 # bindings, compose, reactive/watch), so they look "unused" to static analysis.
 ignore_decorators = ["@on", "@work"]
 ignore_names = [
-    "on_*",
-    "action_*",
-    "key_*",
-    "watch_*",
-    "compose",
-    "check_action",
-    "render",
-    "pytestmark",
+  "on_*",
+  "action_*",
+  "key_*",
+  "watch_*",
+  "compose",
+  "check_action",
+  "render",
+  "pytestmark",
 ]
 min_confidence = 70
 paths = ["src", "tests"]
@@ -186,51 +184,51 @@ fixable = ["ALL"]
 preview = true
 select = ["ALL"]
 ignore = [
-    "CPY",      # no per-file copyright headers in this project
-    "COM812",   # trailing-comma rule conflicts with the formatter
-    "FIX",      # allow TODO/FIXME markers
-    "TD",       # allow informal TODO comment shapes
-    "D203",     # incompatible with D211 (blank line before class)
-    "D213",     # incompatible with D212 (multi-line summary placement)
-    # Textual is an event framework: handlers (on_*, action_*, key_*, watch_*) and
-    # compose() receive framework-supplied args/signatures and are often async by
-    # contract, so these fire pervasively as false positives on idiomatic UI code.
-    "ARG002",   # unused method argument (e.g. `event` a handler must accept)
-    "ARG005",   # unused lambda argument (Textual callbacks)
-    "RUF029",   # unused async (handlers must be async to satisfy the framework)
-    "PLC0415",  # import-outside-top-level (deliberate lazy imports in actions)
-    "PLR6301",  # method-could-be-static (Textual override methods)
-    "PLC2701",  # importing private names (we read our own _-helpers in tests)
-    # Docstring completeness: module + class docstrings are kept (D100/D101); we do
-    # not require a docstring on every override method / __init__ / helper, nor a
-    # Returns section on every function — that's noise on small UI methods.
-    "D102",     # undocumented public method
-    "D103",     # undocumented public function
-    "D104",     # undocumented public package
-    "D105",     # undocumented magic method
-    "D107",     # undocumented __init__
-    "DOC201",   # missing Returns in docstring
-    "DOC402",   # missing Yields in docstring
-    "DOC501",   # missing Raises in docstring
-    "ASYNC109",  # async fn with timeout param (run_capture's timeout is a real API)
-    "FBT001",   # boolean-typed positional arg (build_* flags are conventional)
-    "FBT002",   # boolean default positional arg
-    "RUF012",   # mutable class default (Textual BINDINGS lists are the idiom)
-    "S108",     # hardcoded /tmp reference (scratchpad-path handling in tests)
-    "D101",     # class docstring: Textual widgets/screens/dataclasses self-describe
-    "D205",     # blank-line-after-summary (docstring format nit)
-    "D415",     # docstring terminal punctuation
-    "S101",     # assert: used defensively on stdlib subprocess invariants
-    "FBT003",   # boolean positional in a call (Textual dismiss()/callback idiom)
-    "PLR2004",  # magic value in comparison (e.g. 1024 in format_size)
-    # Complexity/size thresholds: the flagged functions are cohesive and well-tested;
-    # refactoring purely to satisfy an arbitrary count is churn/risk, not clarity.
-    "C901",     # too-complex
-    "PLR0904",  # too-many-public-methods (the single App class)
-    "PLR0911",  # too-many-return-statements (parsers / check_action)
-    "PLR0912",  # too-many-branches
-    "PLR0913",  # too-many-arguments (build_export/build_sync flag builders)
-    "PLW0717",  # too-many-statements-in-try
+  "CPY",    # no per-file copyright headers in this project
+  "COM812", # trailing-comma rule conflicts with the formatter
+  "FIX",    # allow TODO/FIXME markers
+  "TD",     # allow informal TODO comment shapes
+  "D203",   # incompatible with D211 (blank line before class)
+  "D213",   # incompatible with D212 (multi-line summary placement)
+  # Textual is an event framework: handlers (on_*, action_*, key_*, watch_*) and
+  # compose() receive framework-supplied args/signatures and are often async by
+  # contract, so these fire pervasively as false positives on idiomatic UI code.
+  "ARG002",  # unused method argument (e.g. `event` a handler must accept)
+  "ARG005",  # unused lambda argument (Textual callbacks)
+  "RUF029",  # unused async (handlers must be async to satisfy the framework)
+  "PLC0415", # import-outside-top-level (deliberate lazy imports in actions)
+  "PLR6301", # method-could-be-static (Textual override methods)
+  "PLC2701", # importing private names (we read our own _-helpers in tests)
+  # Docstring completeness: module + class docstrings are kept (D100/D101); we do
+  # not require a docstring on every override method / __init__ / helper, nor a
+  # Returns section on every function — that's noise on small UI methods.
+  "D102",     # undocumented public method
+  "D103",     # undocumented public function
+  "D104",     # undocumented public package
+  "D105",     # undocumented magic method
+  "D107",     # undocumented __init__
+  "DOC201",   # missing Returns in docstring
+  "DOC402",   # missing Yields in docstring
+  "DOC501",   # missing Raises in docstring
+  "ASYNC109", # async fn with timeout param (run_capture's timeout is a real API)
+  "FBT001",   # boolean-typed positional arg (build_* flags are conventional)
+  "FBT002",   # boolean default positional arg
+  "RUF012",   # mutable class default (Textual BINDINGS lists are the idiom)
+  "S108",     # hardcoded /tmp reference (scratchpad-path handling in tests)
+  "D101",     # class docstring: Textual widgets/screens/dataclasses self-describe
+  "D205",     # blank-line-after-summary (docstring format nit)
+  "D415",     # docstring terminal punctuation
+  "S101",     # assert: used defensively on stdlib subprocess invariants
+  "FBT003",   # boolean positional in a call (Textual dismiss()/callback idiom)
+  "PLR2004",  # magic value in comparison (e.g. 1024 in format_size)
+  # Complexity/size thresholds: the flagged functions are cohesive and well-tested;
+  # refactoring purely to satisfy an arbitrary count is churn/risk, not clarity.
+  "C901",    # too-complex
+  "PLR0904", # too-many-public-methods (the single App class)
+  "PLR0911", # too-many-return-statements (parsers / check_action)
+  "PLR0912", # too-many-branches
+  "PLR0913", # too-many-arguments (build_export/build_sync flag builders)
+  "PLW0717", # too-many-statements-in-try
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -239,18 +237,18 @@ ignore = [
 # Tests: pytest fixtures aren't annotated, asserts/magic-values/private access are
 # the point, and per-test docstrings add noise, not signal.
 "tests/*.py" = [
-    "S101",     # assert
-    "SLF001",   # private member access
-    "PLR2004",  # magic value in comparison
-    "D",        # docstrings
-    "ANN",      # type annotations (fixtures, params)
-    "ARG",      # unused arguments (monkeypatch, fixtures)
-    "INP001",   # implicit namespace package
-    "E501",     # long lines (inline TOML/JSON fixture literals)
-    "PLC1901",  # compare-to-empty-string (explicit == "" is clearer in assertions)
-    "S404",     # subprocess import (real-uv contract tests shell out to uv)
-    "S603",     # subprocess call without shell=True check
-    "S607",     # subprocess partial executable path ("uv")
+  "S101",    # assert
+  "SLF001",  # private member access
+  "PLR2004", # magic value in comparison
+  "D",       # docstrings
+  "ANN",     # type annotations (fixtures, params)
+  "ARG",     # unused arguments (monkeypatch, fixtures)
+  "INP001",  # implicit namespace package
+  "E501",    # long lines (inline TOML/JSON fixture literals)
+  "PLC1901", # compare-to-empty-string (explicit == "" is clearer in assertions)
+  "S404",    # subprocess import (real-uv contract tests shell out to uv)
+  "S603",    # subprocess call without shell=True check
+  "S607",    # subprocess partial executable path ("uv")
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -264,7 +262,16 @@ env_list = ["style", "3.14", "cov"]
 requires = ["tox>=4"]
 
 [tool.tox.env_run_base]
-commands = [["coverage", "run", "-m", "pytest", { replace = "posargs", default = [], extend = true }]]
+commands = [
+  [
+    "coverage",
+    "run",
+    "-m",
+    "pytest",
+    { replace = "posargs", default = [
+    ], extend = true },
+  ],
+]
 dependency_groups = ["test"]
 description = "Run the tests under {base_python}"
 package = "wheel"
@@ -275,14 +282,17 @@ wheel_build_env = ".pkg"
 [tool.tox.env.style]
 base_python = ["3.14"]
 commands = [
-    ["ruff", "check"],
-    ["ruff", "format", "--check"],
-    ["mypy"],
-    ["taplo", "lint"],
-    ["taplo", "format", "--check"],
-    ["validate-pyproject", "pyproject.toml"],
-    ["typos"],
-    ["actionlint"],
+  ["ruff", "check"],
+  ["ruff", "format", "--check"],
+  # mypy/pyright/ty/pyrefly are configured but not yet gated: greening 4 strict
+  # type-checkers on the Textual code is being ratcheted in incrementally.
+  ["vulture"],
+  ["slotscheck", "-m", "lazyuv"],
+  ["taplo", "lint"],
+  ["taplo", "format", "--check"],
+  ["validate-pyproject", "pyproject.toml"],
+  ["typos"],
+  ["actionlint"],
 ]
 dependency_groups = ["lint"]
 description = "Run linters and formatters"
@@ -290,7 +300,20 @@ runner = "uv-venv-runner"
 
 [tool.tox.env.cov]
 base_python = ["3.14"]
-commands = [["coverage", "combine"], ["coverage", "xml"], ["coverage", "report"]]
+commands = [
+  [
+    "coverage",
+    "combine",
+  ],
+  [
+    "coverage",
+    "xml",
+  ],
+  [
+    "coverage",
+    "report",
+  ],
+]
 dependency_groups = ["test"]
 depends = ["3.14"]
 description = "Combine coverage data and emit XML/report"
@@ -299,3 +322,4 @@ skip_install = true
 
 [tool.typos.default.extend-words]
 lazyuv = "lazyuv"
+unparseable = "unparseable" # a valid spelling, used in test names

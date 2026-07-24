@@ -37,9 +37,27 @@ jobs:
         # would NOT catch this — it just installs the existing lock as-is.
         run: uv sync --locked
 
-      - name: Lint (ruff)
-        # Pin ruff so a new release can't fail an unchanged commit; bump deliberately.
-        run: uvx ruff@0.15.22 check src tests
+      - name: Lint & format (ruff)
+        # Tools are pinned in the `lint` dependency group; run them from the synced
+        # env so versions can't drift under CI.
+        run: |
+          uv run --no-sync ruff check src tests
+          uv run --no-sync ruff format --check src tests
+
+      - name: Static checks (vulture, slotscheck)
+        run: |
+          uv run --no-sync vulture
+          uv run --no-sync slotscheck -m lazyuv
+
+      - name: Config & spelling (typos, taplo, validate-pyproject, actionlint)
+        # The 4 strict type-checkers (mypy/pyright/ty/pyrefly) are configured but not
+        # yet gated — being ratcheted in incrementally.
+        run: |
+          uv run --no-sync typos
+          uv run --no-sync taplo lint
+          uv run --no-sync taplo format --check
+          uv run --no-sync validate-pyproject pyproject.toml
+          uv run --no-sync actionlint
 
       - name: Test
         # The env is already synced above; uv is on PATH, so the real-uv contract

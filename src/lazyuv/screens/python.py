@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, ListItem, ListView
 
-from lazyuv.models import PythonVersion
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
+    from lazyuv.models import PythonVersion
 
 
 class PythonPickerScreen(ModalScreen[tuple[str, str] | None]):

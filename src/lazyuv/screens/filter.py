@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class FilterScreen(ModalScreen[str | None]):

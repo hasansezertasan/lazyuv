@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Static
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 _HELP = """[b]lazyuv keybindings[/b]
 
@@ -59,7 +63,8 @@ Press ?, q, or Escape to close."""
 
 class HelpScreen(Screen[None]):
     """A full-screen help page (not a cramped dialog) — the keybinding list gets the
-    whole viewport, scrolls when taller than the terminal, and closes on ?/q/Esc."""
+    whole viewport, scrolls when taller than the terminal, and closes on ?/q/Esc.
+    """
 
     BINDINGS = [
         Binding("escape", "dismiss", "close"),

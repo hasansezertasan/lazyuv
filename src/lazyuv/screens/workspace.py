@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.markup import escape
-from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, ListItem, ListView
 
-from lazyuv.models import WorkspaceMember
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
+    from lazyuv.models import WorkspaceMember
 
 
 class WorkspaceSwitchScreen(ModalScreen[str | None]):

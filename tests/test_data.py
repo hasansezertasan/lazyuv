@@ -26,7 +26,7 @@ from lazyuv.models import (
 
 # A uv-written PEP 723 block: shebang above, requires-python + deps, and a nested
 # [[tool.uv.index]] table (matches `uv add --script … --index …` on uv 0.11.31).
-UV_STYLE_SCRIPT = '''\
+UV_STYLE_SCRIPT = """\
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.14"
@@ -39,10 +39,10 @@ UV_STYLE_SCRIPT = '''\
 # url = "https://example.com/simple"
 # ///
 print("hello")
-'''
+"""
 
 # A companion script lockfile (`<file>.lock`), same [[package]] shape as uv.lock.
-SCRIPT_LOCK = '''\
+SCRIPT_LOCK = """\
 version = 1
 revision = 3
 requires-python = ">=3.14"
@@ -56,7 +56,7 @@ source = { registry = "https://pypi.org/simple" }
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
-'''
+"""
 
 FIXTURE = Path(__file__).parent / "fixtures" / "project"
 
@@ -67,19 +67,19 @@ def _write_venv(root: Path, version: str, home: str = "/usr/bin") -> None:
     (venv / "pyvenv.cfg").write_text(f"home = {home}\nversion_info = {version}\n")
 
 
-def test_dependency_defaults():
+def test_dependency_defaults() -> None:
     dep = Dependency(name="httpx", spec=">=0.28", group="main")
     assert dep.resolved_version is None
     assert dep.source == "registry"
 
 
-def test_project_holds_deps():
+def test_project_holds_deps() -> None:
     proj = Project(name="x", version="0.1.0", requires_python=">=3.14")
     assert proj.dependencies == []
     assert LoadStatus.OK.value == "ok"
 
 
-def test_load_ok_status():
+def test_load_ok_status() -> None:
     result = load_project(FIXTURE)
     assert result.status is LoadStatus.OK
     assert result.project is not None
@@ -88,7 +88,7 @@ def test_load_ok_status():
     assert result.project.requires_python == ">=3.14"
 
 
-def test_load_groups_and_resolved_versions():
+def test_load_groups_and_resolved_versions() -> None:
     proj = load_project(FIXTURE).project
     by_name = {d.name: d for d in proj.dependencies}
 
@@ -103,20 +103,20 @@ def test_load_groups_and_resolved_versions():
     assert by_name["pytest"].resolved_version == "8.3.2"
 
 
-def test_load_scripts():
+def test_load_scripts() -> None:
     proj = load_project(FIXTURE).project
     assert proj.scripts == [Script("serve", "sample.cli:serve")]
 
 
-def test_load_sets_kind():
+def test_load_sets_kind() -> None:
     proj = load_project(FIXTURE).project
     by_name = {d.name: d for d in proj.dependencies}
     assert by_name["httpx"].kind == "main"
-    assert by_name["typer"].kind == "extra"   # from [project.optional-dependencies]
-    assert by_name["pytest"].kind == "dev"    # from [dependency-groups].dev
+    assert by_name["typer"].kind == "extra"  # from [project.optional-dependencies]
+    assert by_name["pytest"].kind == "dev"  # from [dependency-groups].dev
 
 
-def test_load_skips_include_group(tmp_path):
+def test_load_skips_include_group(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -134,24 +134,26 @@ def test_load_skips_include_group(tmp_path):
     assert ("dev", "pytest") in pairs
     # the {include-group = "lint"} reference must NOT appear as a dependency
     assert all(d.name for d in result.project.dependencies)
-    lint_kind = {d.name: d.kind for d in result.project.dependencies if d.group == "lint"}
+    lint_kind = {
+        d.name: d.kind for d in result.project.dependencies if d.group == "lint"
+    }
     assert lint_kind["ruff"] == "group"
 
 
-def test_load_not_a_project(tmp_path):
+def test_load_not_a_project(tmp_path) -> None:
     result = load_project(tmp_path)
     assert result.status is LoadStatus.NOT_A_PROJECT
     assert result.project is None
 
 
-def test_load_malformed(tmp_path):
+def test_load_malformed(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text("this is = = not toml")
     result = load_project(tmp_path)
     assert result.status is LoadStatus.MALFORMED
     assert result.error
 
 
-def test_load_collects_groups_including_empty(tmp_path):
+def test_load_collects_groups_including_empty(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -169,7 +171,7 @@ def test_load_collects_groups_including_empty(tmp_path):
     assert ("docs", "group") in proj.groups
 
 
-def test_forked_package_lists_all_versions(tmp_path):
+def test_forked_package_lists_all_versions(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -206,7 +208,7 @@ def test_forked_package_lists_all_versions(tmp_path):
     assert by_name["rich"].resolved_version == "13.7.1"
 
 
-def test_duplicate_version_across_entries_is_not_a_fork(tmp_path):
+def test_duplicate_version_across_entries_is_not_a_fork(tmp_path) -> None:
     # Two entries, same version -> one distinct version -> not treated as forked.
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
@@ -233,7 +235,7 @@ def test_duplicate_version_across_entries_is_not_a_fork(tmp_path):
     assert httpx.resolved_version == "0.28.1"
 
 
-def test_read_lock_skips_nameless_package(tmp_path):
+def test_read_lock_skips_nameless_package(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -260,23 +262,23 @@ def test_read_lock_skips_nameless_package(tmp_path):
 # --- environment (Python / venv) read path ---------------------------------
 
 
-def test_read_pin_first_nonempty_line(tmp_path):
+def test_read_pin_first_nonempty_line(tmp_path) -> None:
     (tmp_path / ".python-version").write_text("\n3.14\n3.12\n")
     assert _read_pin(tmp_path) == "3.14"
 
 
-def test_read_pin_absent(tmp_path):
+def test_read_pin_absent(tmp_path) -> None:
     assert _read_pin(tmp_path) is None
 
 
-def test_read_venv_version_info_and_home(tmp_path):
+def test_read_venv_version_info_and_home(tmp_path) -> None:
     _write_venv(tmp_path, "3.14.0", home="/opt/py/bin")
     version, home = _read_venv(tmp_path / ".venv" / "pyvenv.cfg")
     assert version == "3.14.0"
     assert home == "/opt/py/bin"
 
 
-def test_read_venv_falls_back_to_version_key(tmp_path):
+def test_read_venv_falls_back_to_version_key(tmp_path) -> None:
     venv = tmp_path / ".venv"
     venv.mkdir()
     (venv / "pyvenv.cfg").write_text("home = /x\nversion = 3.13.1\n")
@@ -284,50 +286,53 @@ def test_read_venv_falls_back_to_version_key(tmp_path):
     assert version == "3.13.1"
 
 
-def test_read_venv_absent(tmp_path):
+def test_read_venv_absent(tmp_path) -> None:
     assert _read_venv(tmp_path / ".venv" / "pyvenv.cfg") == (None, None)
 
 
-def test_compute_drift_none_without_venv():
+def test_compute_drift_none_without_venv() -> None:
     assert _compute_drift(None, "3.14", ">=3.14") is None
 
 
-def test_compute_drift_pin_mismatch():
+def test_compute_drift_pin_mismatch() -> None:
     note = _compute_drift("3.12.0", "3.14", ">=3.10")
-    assert note is not None and "3.12.0" in note and "3.14" in note
+    assert note is not None
+    assert "3.12.0" in note
+    assert "3.14" in note
 
 
-def test_compute_drift_pin_matches_by_component():
+def test_compute_drift_pin_matches_by_component() -> None:
     # pin 3.14 matches venv 3.14.0 (component prefix), and pin drives the check
     assert _compute_drift("3.14.0", "3.14", "==3.10") is None
     # pin 3.1 must NOT match venv 3.14.0 (component-wise, not string startswith)
     assert _compute_drift("3.14.0", "3.1", "") is not None
 
 
-def test_compute_drift_requires_python_floor_below():
+def test_compute_drift_requires_python_floor_below() -> None:
     note = _compute_drift("3.12.0", None, ">=3.14")
-    assert note is not None and "below" in note
+    assert note is not None
+    assert "below" in note
 
 
-def test_compute_drift_requires_python_floor_satisfied():
+def test_compute_drift_requires_python_floor_satisfied() -> None:
     assert _compute_drift("3.14.0", None, ">=3.14") is None
 
 
-def test_compute_drift_requires_python_exact_and_compatible():
+def test_compute_drift_requires_python_exact_and_compatible() -> None:
     # No-pin `==` and `~=` branches (venv major.minor from uv is "3.14").
     assert _compute_drift("3.14", None, "==3.12") is not None  # exact mismatch -> drift
-    assert _compute_drift("3.14", None, "==3.14") is None      # exact match -> no drift
+    assert _compute_drift("3.14", None, "==3.14") is None  # exact match -> no drift
     assert _compute_drift("3.10", None, "~=3.14") is not None  # below compat floor
 
 
-def test_compute_drift_complex_requires_python_is_unknown():
+def test_compute_drift_complex_requires_python_is_unknown() -> None:
     # A compound specifier must be treated as unknown, never compared on its first
     # clause (">=3.9,<3.11" with a 3.14 venv would else wrongly read as satisfied).
     assert _compute_drift("3.12.0", None, ">=3.11,<4.0") is None
     assert _compute_drift("3.14.0", None, ">=3.9,<3.11") is None
 
 
-def test_compute_drift_patch_pin_no_false_alarm():
+def test_compute_drift_patch_pin_no_false_alarm() -> None:
     # uv writes major.minor only into pyvenv.cfg ("3.14"); a patch-level pin must
     # NOT be reported as drift just because the patch can't be confirmed.
     assert _compute_drift("3.14", "3.14.2", "") is None
@@ -335,14 +340,14 @@ def test_compute_drift_patch_pin_no_false_alarm():
     assert _compute_drift("3.12", "3.14.2", "") is not None
 
 
-def test_compute_drift_non_version_pin_is_unknown():
+def test_compute_drift_non_version_pin_is_unknown() -> None:
     # Implementation-qualified pins / full uv keys can't be compared to a bare
     # venv version -> unknown, not a bogus "≠ pinned" message.
     assert _compute_drift("3.14.0", "pypy@3.10", "") is None
     assert _compute_drift("3.14.0", "cpython-3.14.6-macos-aarch64-none", "") is None
 
 
-def test_read_environment_composes(tmp_path):
+def test_read_environment_composes(tmp_path) -> None:
     (tmp_path / ".python-version").write_text("3.14\n")
     _write_venv(tmp_path, "3.12.0")
     env = _read_environment(tmp_path, ">=3.10")
@@ -352,34 +357,32 @@ def test_read_environment_composes(tmp_path):
     assert env.drift is not None  # venv 3.12 != pin 3.14
 
 
-def test_load_project_attaches_environment():
+def test_load_project_attaches_environment() -> None:
     proj = load_project(FIXTURE).project
     assert proj.environment is not None
 
 
-def test_parse_python_list_managed_system_and_available():
-    output = json.dumps(
-        [
-            {
-                "key": "cpython-3.14.6-macos-aarch64-none",
-                "version": "3.14.6",
-                "implementation": "cpython",
-                "path": "/Users/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
-            },
-            {
-                "key": "cpython-3.12.13-macos-aarch64-none",
-                "version": "3.12.13",
-                "implementation": "cpython",
-                "path": "/opt/homebrew/bin/python3.12",
-            },
-            {
-                "key": "pypy-3.10.14-macos-aarch64-none",
-                "version": "3.10.14",
-                "implementation": "pypy",
-                "path": None,
-            },
-        ]
-    )
+def test_parse_python_list_managed_system_and_available() -> None:
+    output = json.dumps([
+        {
+            "key": "cpython-3.14.6-macos-aarch64-none",
+            "version": "3.14.6",
+            "implementation": "cpython",
+            "path": "/Users/x/.local/share/uv/python/cpython-3.14-macos-aarch64-none/bin/python3.14",
+        },
+        {
+            "key": "cpython-3.12.13-macos-aarch64-none",
+            "version": "3.12.13",
+            "implementation": "cpython",
+            "path": "/opt/homebrew/bin/python3.12",
+        },
+        {
+            "key": "pypy-3.10.14-macos-aarch64-none",
+            "version": "3.10.14",
+            "implementation": "pypy",
+            "path": None,
+        },
+    ])
     versions = parse_python_list(output)
     # uv-managed install: installed + managed (uninstallable)
     assert versions[0] == PythonVersion(
@@ -398,13 +401,13 @@ def test_parse_python_list_managed_system_and_available():
     assert versions[2].implementation == "pypy"
 
 
-def test_parse_python_list_skips_entries_without_key():
+def test_parse_python_list_skips_entries_without_key() -> None:
     # A row missing uv's `key` can't be acted on unambiguously -> skip it.
     output = json.dumps([{"version": "3.14.0", "path": None}])
     assert parse_python_list(output) == []
 
 
-def test_parse_python_list_malformed_is_empty():
+def test_parse_python_list_malformed_is_empty() -> None:
     assert parse_python_list("not json") == []
     assert parse_python_list("") == []
 
@@ -412,7 +415,7 @@ def test_parse_python_list_malformed_is_empty():
 # --- global state: tools / cache / version ---------------------------------
 
 
-def test_parse_tool_list_multiple_tools_and_executables():
+def test_parse_tool_list_multiple_tools_and_executables() -> None:
     from lazyuv.data import parse_tool_list
     from lazyuv.models import Tool
 
@@ -433,28 +436,33 @@ def test_parse_tool_list_multiple_tools_and_executables():
     ]
 
 
-def test_parse_tool_list_tool_without_executables():
+def test_parse_tool_list_tool_without_executables() -> None:
     from lazyuv.data import parse_tool_list
 
     tools = parse_tool_list("mytool v1.2.3\n")
-    assert tools == [__import__("lazyuv.models", fromlist=["Tool"]).Tool("mytool", "1.2.3", ())]
+    assert tools == [
+        __import__("lazyuv.models", fromlist=["Tool"]).Tool("mytool", "1.2.3", ())
+    ]
 
 
-def test_parse_tool_list_empty_and_no_tools_message():
+def test_parse_tool_list_empty_and_no_tools_message() -> None:
     from lazyuv.data import parse_tool_list
 
     assert parse_tool_list("") == []
     assert parse_tool_list("No tools installed.\n") == []
 
 
-def test_parse_uv_version_extracts_and_falls_back():
+def test_parse_uv_version_extracts_and_falls_back() -> None:
     from lazyuv.data import parse_uv_version
 
-    assert parse_uv_version("uv 0.11.31 (Homebrew 2026-07-22 aarch64-apple-darwin)") == "0.11.31"
+    assert (
+        parse_uv_version("uv 0.11.31 (Homebrew 2026-07-22 aarch64-apple-darwin)")
+        == "0.11.31"
+    )
     assert parse_uv_version("weird output") == "weird output"
 
 
-def test_directory_size_sums_files(tmp_path):
+def test_directory_size_sums_files(tmp_path) -> None:
     from lazyuv.data import directory_size
 
     (tmp_path / "a").write_bytes(b"x" * 100)
@@ -464,13 +472,13 @@ def test_directory_size_sums_files(tmp_path):
     assert directory_size(tmp_path) == 150
 
 
-def test_directory_size_missing_dir_is_zero(tmp_path):
+def test_directory_size_missing_dir_is_zero(tmp_path) -> None:
     from lazyuv.data import directory_size
 
     assert directory_size(tmp_path / "nope") == 0
 
 
-def test_format_size_units():
+def test_format_size_units() -> None:
     from lazyuv.data import format_size
 
     assert format_size(0) == "0 B"
@@ -480,7 +488,7 @@ def test_format_size_units():
     assert format_size(2 * 1024**3) == "2.0 GiB"
 
 
-def test_format_size_boundaries_and_tib():
+def test_format_size_boundaries_and_tib() -> None:
     from lazyuv.data import format_size
 
     # just under 1 MiB must promote to MiB, not show "1024.0 KiB"
@@ -491,16 +499,17 @@ def test_format_size_boundaries_and_tib():
     assert format_size(3 * 1024**4) == "3.0 TiB"
 
 
-def test_parse_tool_list_tolerates_extra_spacing():
+def test_parse_tool_list_tolerates_extra_spacing() -> None:
     from lazyuv.data import parse_tool_list
 
     # a future padding change (two spaces) must not silently drop the tool
     tools = parse_tool_list("ruff  v0.11.31\n- ruff\n")
     assert len(tools) == 1
-    assert tools[0].name == "ruff" and tools[0].version == "0.11.31"
+    assert tools[0].name == "ruff"
+    assert tools[0].version == "0.11.31"
 
 
-def test_directory_size_on_a_file_is_zero(tmp_path):
+def test_directory_size_on_a_file_is_zero(tmp_path) -> None:
     from lazyuv.data import directory_size
 
     f = tmp_path / "afile"
@@ -512,18 +521,20 @@ def test_directory_size_on_a_file_is_zero(tmp_path):
 # --- M4: sources & workspaces ----------------------------------------------
 
 
-def test_source_detail_for_each_kind():
+def test_source_detail_for_each_kind() -> None:
     from lazyuv.data import _source_detail
 
     assert _source_detail({"workspace": True}) == "workspace"
     assert _source_detail({"git": "https://x/y.git"}) == "git (https://x/y.git)"
     assert _source_detail({"path": "../lib"}) == "path (../lib)"
-    assert _source_detail({"path": "../lib", "editable": True}) == "path (../lib) editable"
+    assert (
+        _source_detail({"path": "../lib", "editable": True}) == "path (../lib) editable"
+    )
     assert _source_detail({"editable": True}) == "editable"
     assert _source_detail("nonsense") == ""
 
 
-def test_load_attaches_source_detail(tmp_path):
+def test_load_attaches_source_detail(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
         'name = "x"\n'
@@ -564,25 +575,27 @@ def _write_workspace(root: Path) -> None:
     (root / "packages" / "notapkg").mkdir()
 
 
-def test_workspace_members_resolved(tmp_path):
+def test_workspace_members_resolved(tmp_path) -> None:
     _write_workspace(tmp_path)
     proj = load_project(tmp_path).project
     members = proj.workspace_members
     names = [m.name for m in members]
-    assert names[0] == "wsroot" and members[0].is_root  # root first
-    assert "alpha" in names and "beta" in names
+    assert names[0] == "wsroot"
+    assert members[0].is_root
+    assert "alpha" in names
+    assert "beta" in names
     assert "skip" not in names  # excluded
     assert all(m.name != "notapkg" for m in members)  # no pyproject -> skipped
     alpha = next(m for m in members if m.name == "alpha")
     assert alpha.directory == "packages/alpha"
 
 
-def test_non_workspace_has_no_members():
+def test_non_workspace_has_no_members() -> None:
     proj = load_project(FIXTURE).project
     assert proj.workspace_members == []
 
 
-def test_load_member_directory_scopes_to_member(tmp_path):
+def test_load_member_directory_scopes_to_member(tmp_path) -> None:
     _write_workspace(tmp_path)
     (tmp_path / "packages" / "alpha" / "pyproject.toml").write_text(
         "[project]\n"
@@ -596,7 +609,7 @@ def test_load_member_directory_scopes_to_member(tmp_path):
     assert [d.name for d in member.dependencies] == ["rich"]
 
 
-def test_workspace_dot_member_glob_does_not_raise(tmp_path):
+def test_workspace_dot_member_glob_does_not_raise(tmp_path) -> None:
     # A pathological glob like "." must be skipped, not crash the load.
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
@@ -613,7 +626,7 @@ def test_workspace_dot_member_glob_does_not_raise(tmp_path):
     assert [m.name for m in result.project.workspace_members] == ["wsroot"]
 
 
-def test_workspace_empty_members_is_root_only(tmp_path):
+def test_workspace_empty_members_is_root_only(tmp_path) -> None:
     # A [tool.uv.workspace] table with no members is still a workspace: root only.
     (tmp_path / "pyproject.toml").write_text(
         "[project]\n"
@@ -626,10 +639,11 @@ def test_workspace_empty_members_is_root_only(tmp_path):
     proj = load_project(tmp_path).project
     members = proj.workspace_members
     assert len(members) == 1
-    assert members[0].name == "wsroot" and members[0].is_root
+    assert members[0].name == "wsroot"
+    assert members[0].is_root
 
 
-def test_member_lock_read_from_workspace_root(tmp_path):
+def test_member_lock_read_from_workspace_root(tmp_path) -> None:
     # A workspace keeps one lockfile at the root; loading a member with lock_root=root
     # must resolve that member's deps from the root's uv.lock.
     _write_workspace(tmp_path)
@@ -656,7 +670,7 @@ def test_member_lock_read_from_workspace_root(tmp_path):
 # --- inline scripts (PEP 723) ----------------------------------------------
 
 
-def test_parse_pep723_block_uv_style():
+def test_parse_pep723_block_uv_style() -> None:
     meta = parse_pep723_block(UV_STYLE_SCRIPT)
     assert meta is not None
     assert meta["requires-python"] == ">=3.14"
@@ -665,28 +679,28 @@ def test_parse_pep723_block_uv_style():
     assert meta["tool"]["uv"]["index"][0]["url"] == "https://example.com/simple"
 
 
-def test_parse_pep723_block_empty_deps():
-    text = "# /// script\n# requires-python = \">=3.14\"\n# dependencies = []\n# ///\nx = 1\n"
+def test_parse_pep723_block_empty_deps() -> None:
+    text = '# /// script\n# requires-python = ">=3.14"\n# dependencies = []\n# ///\nx = 1\n'
     meta = parse_pep723_block(text)
     assert meta == {"requires-python": ">=3.14", "dependencies": []}
 
 
-def test_parse_pep723_block_none_when_no_block():
+def test_parse_pep723_block_none_when_no_block() -> None:
     assert parse_pep723_block('print("plain")\n') is None
 
 
-def test_parse_pep723_block_none_when_duplicate_blocks():
+def test_parse_pep723_block_none_when_duplicate_blocks() -> None:
     # PEP 723 forbids more than one script block; treat as no metadata (crash-safe).
     block = "# /// script\n# dependencies = []\n# ///\n"
     assert parse_pep723_block(block + "x = 1\n" + block) is None
 
 
-def test_parse_pep723_block_none_when_malformed_toml():
+def test_parse_pep723_block_none_when_malformed_toml() -> None:
     text = "# /// script\n# dependencies = [unclosed\n# ///\n"
     assert parse_pep723_block(text) is None
 
 
-def test_load_script_builds_script_group_deps(tmp_path):
+def test_load_script_builds_script_group_deps(tmp_path) -> None:
     script = tmp_path / "demo.py"
     script.write_text(UV_STYLE_SCRIPT)
     result = load_script(script)
@@ -704,7 +718,7 @@ def test_load_script_builds_script_group_deps(tmp_path):
     assert requests.resolved_version is None
 
 
-def test_load_script_resolves_versions_from_companion_lock(tmp_path):
+def test_load_script_resolves_versions_from_companion_lock(tmp_path) -> None:
     script = tmp_path / "demo.py"
     script.write_text(UV_STYLE_SCRIPT)
     (tmp_path / "demo.py.lock").write_text(SCRIPT_LOCK)
@@ -713,7 +727,7 @@ def test_load_script_resolves_versions_from_companion_lock(tmp_path):
     assert resolved == {"requests": "2.34.2", "rich": "15.0.0"}
 
 
-def test_load_script_plain_file_has_no_block(tmp_path):
+def test_load_script_plain_file_has_no_block(tmp_path) -> None:
     script = tmp_path / "plain.py"
     script.write_text('print("plain")\n')
     result = load_script(script)
@@ -722,11 +736,11 @@ def test_load_script_plain_file_has_no_block(tmp_path):
     assert result.dependencies == []
 
 
-def test_load_script_missing_file_returns_none(tmp_path):
+def test_load_script_missing_file_returns_none(tmp_path) -> None:
     assert load_script(tmp_path / "nope.py") is None
 
 
-def test_find_scripts_skips_dotdirs_and_sorts(tmp_path):
+def test_find_scripts_skips_dotdirs_and_sorts(tmp_path) -> None:
     (tmp_path / "b.py").write_text("")
     (tmp_path / "a.py").write_text("")
     (tmp_path / "note.txt").write_text("")
@@ -741,7 +755,7 @@ def test_find_scripts_skips_dotdirs_and_sorts(tmp_path):
     assert truncated is False
 
 
-def test_find_scripts_reports_truncation(tmp_path, monkeypatch):
+def test_find_scripts_reports_truncation(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("lazyuv.data._SCRIPT_SCAN_CAP", 3)
     for i in range(10):
         (tmp_path / f"s{i}.py").write_text("")
@@ -750,7 +764,7 @@ def test_find_scripts_reports_truncation(tmp_path, monkeypatch):
     assert len(scripts) == 3
 
 
-def test_find_scripts_exact_cap_is_not_truncated(tmp_path, monkeypatch):
+def test_find_scripts_exact_cap_is_not_truncated(tmp_path, monkeypatch) -> None:
     # A tree with exactly _SCRIPT_SCAN_CAP files is complete — nothing omitted, so
     # it must NOT warn about truncation (off-by-one on the signal).
     monkeypatch.setattr("lazyuv.data._SCRIPT_SCAN_CAP", 3)
@@ -761,7 +775,7 @@ def test_find_scripts_exact_cap_is_not_truncated(tmp_path, monkeypatch):
     assert len(scripts) == 3
 
 
-def test_find_scripts_prunes_vendor_dirs(tmp_path):
+def test_find_scripts_prunes_vendor_dirs(tmp_path) -> None:
     (tmp_path / "keep.py").write_text("")
     for vendor in ("node_modules", "__pycache__", "build"):
         d = tmp_path / vendor
@@ -772,7 +786,7 @@ def test_find_scripts_prunes_vendor_dirs(tmp_path):
     assert truncated is False
 
 
-def test_find_scripts_bounds_directory_traversal(tmp_path, monkeypatch):
+def test_find_scripts_bounds_directory_traversal(tmp_path, monkeypatch) -> None:
     # Many directories but few .py files: the file-count cap never fires, so the
     # directory cap must bound the walk instead of running unbounded.
     monkeypatch.setattr("lazyuv.data._SCRIPT_DIR_CAP", 3)
@@ -780,7 +794,7 @@ def test_find_scripts_bounds_directory_traversal(tmp_path, monkeypatch):
         sub = tmp_path / f"d{i}"
         sub.mkdir()
         (sub / "note.txt").write_text("")  # no .py -> file cap never hit
-    scripts, truncated = find_scripts(tmp_path)
+    _scripts, truncated = find_scripts(tmp_path)
     assert truncated is True
 
 
@@ -791,32 +805,40 @@ _TREE_JSON = json.dumps({
     "roots": [{"id": "root"}],
     "resolution": {
         "root": {
-            "name": "app", "version": "0.1.0",
+            "name": "app",
+            "version": "0.1.0",
             "dependencies": [{"id": "rich"}, {"id": "idna"}, {"id": "ghost"}],
         },
         "rich": {
-            "name": "rich", "version": "13.0.0", "latest_version": "15.0.0",
+            "name": "rich",
+            "version": "13.0.0",
+            "latest_version": "15.0.0",
             # self-edge exercises the dedupe/cycle guard
             "dependencies": [{"id": "pygments"}, {"id": "rich"}],
         },
         "pygments": {
-            "name": "pygments", "version": "2.20.0", "latest_version": "2.20.0",
+            "name": "pygments",
+            "version": "2.20.0",
+            "latest_version": "2.20.0",
             "dependencies": [],
         },
         "idna": {
-            "name": "idna", "version": "3.0", "latest_version": "3.18",
+            "name": "idna",
+            "version": "3.0",
+            "latest_version": "3.18",
             "dependencies": [],
         },
     },
 })
 
 
-def test_parse_tree_builds_forest_with_edges():
+def test_parse_tree_builds_forest_with_edges() -> None:
     forest = parse_tree(_TREE_JSON)
     assert len(forest) == 1
     root = forest[0]
     assert isinstance(root, DepTreeNode)
-    assert root.name == "app" and root.version == "0.1.0"
+    assert root.name == "app"
+    assert root.version == "0.1.0"
     child_names = [c.name for c in root.children]
     # the dangling "ghost" edge is skipped, not raised
     assert child_names == ["rich", "idna"]
@@ -824,48 +846,56 @@ def test_parse_tree_builds_forest_with_edges():
     # rich -> pygments, and rich -> rich (deduped, no re-expansion)
     assert [c.name for c in rich.children] == ["pygments", "rich"]
     self_ref = rich.children[1]
-    assert self_ref.name == "rich" and self_ref.deduped is True
+    assert self_ref.name == "rich"
+    assert self_ref.deduped is True
     assert self_ref.children == ()
 
 
-def test_parse_tree_unparseable_returns_none():
+def test_parse_tree_unparseable_returns_none() -> None:
     # None (not []) signals "couldn't read the output", distinct from an empty forest.
     assert parse_tree("not json") is None
     assert parse_tree(json.dumps({"roots": [{"id": "x"}]})) is None  # no resolution
 
 
-def test_parse_tree_valid_but_no_roots_is_empty_not_none():
+def test_parse_tree_valid_but_no_roots_is_empty_not_none() -> None:
     # Structurally valid output with no roots is a genuine empty forest, not a failure.
-    payload = json.dumps({"schema": {"version": "preview"}, "roots": [],
-                          "resolution": {}})
+    payload = json.dumps({
+        "schema": {"version": "preview"},
+        "roots": [],
+        "resolution": {},
+    })
     assert parse_tree(payload) == []
 
 
-def test_parse_outdated_picks_only_newer():
+def test_parse_outdated_picks_only_newer() -> None:
     outdated = parse_outdated(_TREE_JSON)
     # rich 13->15 and idna 3.0->3.18 are outdated; pygments equal -> excluded
     assert outdated == {"rich": "15.0.0", "idna": "3.18"}
     assert "pygments" not in outdated
 
 
-def test_parse_outdated_canonical_names():
+def test_parse_outdated_canonical_names() -> None:
     payload = json.dumps({
         "schema": {"version": "preview"},
         "roots": [],
         "resolution": {
-            "a": {"name": "Foo_Bar", "version": "1.0", "latest_version": "2.0",
-                  "dependencies": []},
+            "a": {
+                "name": "Foo_Bar",
+                "version": "1.0",
+                "latest_version": "2.0",
+                "dependencies": [],
+            },
         },
     })
     assert parse_outdated(payload) == {"foo-bar": "2.0"}
 
 
-def test_parse_outdated_unparseable_returns_none():
+def test_parse_outdated_unparseable_returns_none() -> None:
     # None distinguishes "couldn't read the output" from a valid "{}" (nothing outdated),
     # so the app never reports an unreadable response as a reassuring "0 outdated".
     assert parse_outdated("nope") is None
 
 
-def test_parse_outdated_valid_but_none_outdated_is_empty_not_none():
+def test_parse_outdated_valid_but_none_outdated_is_empty_not_none() -> None:
     # no --outdated -> no latest_version -> valid, nothing outdated -> {} (not None)
     assert parse_outdated(_TREE_JSON.replace("latest_version", "x")) == {}

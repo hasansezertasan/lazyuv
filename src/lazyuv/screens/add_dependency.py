@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class AddDependencyScreen(ModalScreen[tuple[list[str], str, str] | None]):

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Label, SelectionList
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 # Dismiss payload: (extras, groups, no_dev, frozen).
 SyncOptions = tuple[list[str], list[str], bool, bool]
@@ -56,14 +60,12 @@ class SyncOptionsScreen(ModalScreen["SyncOptions | None"]):
         if event.button.id == "cancel":
             self.dismiss(None)
             return
-        self.dismiss(
-            (
-                self._selected("extras"),
-                self._selected("groups"),
-                self.query_one("#no-dev", Checkbox).value,
-                self.query_one("#frozen", Checkbox).value,
-            )
-        )
+        self.dismiss((
+            self._selected("extras"),
+            self._selected("groups"),
+            self.query_one("#no-dev", Checkbox).value,
+            self.query_one("#frozen", Checkbox).value,
+        ))
 
     def key_escape(self) -> None:
         self.dismiss(None)

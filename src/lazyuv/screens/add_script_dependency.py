@@ -6,10 +6,14 @@ package names. Dismisses with the package list, or None if cancelled/blank.
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class AddScriptDependencyScreen(ModalScreen[list[str] | None]):

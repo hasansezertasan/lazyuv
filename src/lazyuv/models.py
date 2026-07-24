@@ -9,17 +9,17 @@ from enum import Enum
 class LoadStatus(Enum):
     OK = "ok"
     NOT_A_PROJECT = "not_a_project"  # no pyproject.toml found
-    MALFORMED = "malformed"          # TOML failed to parse
+    MALFORMED = "malformed"  # TOML failed to parse
 
 
 @dataclass(frozen=True, slots=True)
 class Dependency:
-    name: str                 # canonical package name, e.g. "httpx"
-    spec: str                 # declared version specifier, e.g. ">=0.28.1" ("" if none)
-    group: str                # "main", "dev", or an optional-group name
+    name: str  # canonical package name, e.g. "httpx"
+    spec: str  # declared version specifier, e.g. ">=0.28.1" ("" if none)
+    group: str  # "main", "dev", or an optional-group name
     resolved_version: str | None = None  # from uv.lock, None if not locked
     source: str = "registry"  # registry | git | path | url | other
-    kind: str = "extra"       # main | dev | extra | group  (how uv targets this dep)
+    kind: str = "extra"  # main | dev | extra | group  (how uv targets this dep)
     # All distinct versions when the lock holds more than one for this package
     # (universal-lock resolution forks OR [tool.uv].conflicts variants), in
     # lock-file order; empty when there are 0 or 1 distinct versions (repeated
@@ -37,23 +37,23 @@ class Dependency:
 class WorkspaceMember:
     """A member of a uv workspace ([tool.uv.workspace])."""
 
-    name: str            # the member's [project].name
-    directory: str       # relative to the workspace root; "" for the root itself
+    name: str  # the member's [project].name
+    directory: str  # relative to the workspace root; "" for the root itself
     is_root: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Script:
-    name: str                 # e.g. "serve"
-    target: str               # entry point string, e.g. "myproject.cli:main"
+    name: str  # e.g. "serve"
+    target: str  # entry point string, e.g. "myproject.cli:main"
 
 
 @dataclass(frozen=True, slots=True)
 class Tool:
     """A globally-installed uv tool (from `uv tool list`)."""
 
-    name: str                     # e.g. "ruff"
-    version: str                  # e.g. "0.11.31" ("" if unparsable)
+    name: str  # e.g. "ruff"
+    version: str  # e.g. "0.11.31" ("" if unparsable)
     executables: tuple[str, ...] = ()  # exposed commands, e.g. ("ruff",)
 
 
@@ -82,12 +82,12 @@ class PythonVersion:
     repeat across CPython/PyPy/free-threaded builds. Actions use `key`, never `version`.
     """
 
-    key: str                  # uv request id, e.g. "cpython-3.14.6-macos-aarch64-none"
-    version: str              # e.g. "3.14.6"
-    implementation: str       # "cpython", "pypy", ...
-    installed: bool           # True when uv reports a local path for it
-    managed: bool             # True when uv manages this install (safe to uninstall)
-    path: str | None = None   # interpreter path when installed, else None
+    key: str  # uv request id, e.g. "cpython-3.14.6-macos-aarch64-none"
+    version: str  # e.g. "3.14.6"
+    implementation: str  # "cpython", "pypy", ...
+    installed: bool  # True when uv reports a local path for it
+    managed: bool  # True when uv manages this install (safe to uninstall)
+    path: str | None = None  # interpreter path when installed, else None
 
 
 @dataclass(frozen=True, slots=True)

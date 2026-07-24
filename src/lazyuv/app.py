@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-import sys
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -36,9 +35,9 @@ from lazyuv.screens.init import InitScreen
 from lazyuv.screens.python import PythonPickerScreen
 from lazyuv.screens.run_args import RunArgsScreen
 from lazyuv.screens.script_picker import ScriptPickerScreen
-from lazyuv.screens.tree import DependencyTreeScreen
 from lazyuv.screens.sync_options import SyncOptionsScreen
 from lazyuv.screens.tool_install import ToolInstallScreen
+from lazyuv.screens.tree import DependencyTreeScreen
 from lazyuv.screens.version import VersionScreen
 from lazyuv.screens.workspace import WorkspaceSwitchScreen
 from lazyuv.widgets.cache import CachePanel
@@ -175,21 +174,39 @@ class LazyUvApp(App[None]):
     # Actions available only in one mode; used by check_action to make the footer
     # context-sensitive (inapplicable keys are hidden rather than shown as live).
     _GLOBAL_ACTIONS = frozenset({
-        "tool_install", "tool_upgrade_all", "tool_uninstall",
-        "cache_clean", "cache_prune", "cache_size", "self_update",
+        "tool_install",
+        "tool_upgrade_all",
+        "tool_uninstall",
+        "cache_clean",
+        "cache_prune",
+        "cache_size",
+        "self_update",
     })
     # Project-only: inert in both global and script mode.
     _PROJECT_ONLY_ACTIONS = frozenset({
-        "sync", "sync_options", "lock", "python", "venv", "filter",
-        "workspace", "export", "tree", "outdated", "version",
+        "sync",
+        "sync_options",
+        "lock",
+        "python",
+        "venv",
+        "filter",
+        "workspace",
+        "export",
+        "tree",
+        "outdated",
+        "version",
     })
     # Shared by project and script mode (dispatch branches on `self.mode`).
     _PROJECT_OR_SCRIPT_ACTIONS = frozenset({
-        "add", "remove", "run", "run_args", "open_script",
+        "add",
+        "remove",
+        "run",
+        "run_args",
+        "open_script",
     })
     _SCRIPT_ONLY_ACTIONS = frozenset({"exit_script"})
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         mode = self.mode
         if action in self._GLOBAL_ACTIONS:
             return True if mode == "global" else None
@@ -198,10 +215,10 @@ class LazyUvApp(App[None]):
         if action in self._SCRIPT_ONLY_ACTIONS:
             return True if mode == "script" else None
         if action in self._PROJECT_OR_SCRIPT_ACTIONS:
-            return True if mode in ("project", "script") else None
+            return True if mode in {"project", "script"} else None
         # `upgrade` is a tool (global) or package (project) op — not a script op.
         if action == "upgrade":
-            return True if mode in ("global", "project") else None
+            return True if mode in {"global", "project"} else None
         # `init` only makes sense when there's no pyproject.toml at all; uv refuses
         # otherwise (incl. a MALFORMED pyproject, which also leaves project None).
         if action == "init":
@@ -217,7 +234,7 @@ class LazyUvApp(App[None]):
     async def _load_uv_version(self) -> None:
         try:
             _code, out = await commands.run_capture(commands.build_uv_version())
-        except Exception:  # noqa: BLE001 - version indicator is best-effort
+        except Exception:  # ruff:ignore[blind-except] - version indicator is best-effort
             return
         self.uv_version = parse_uv_version(out)
         self._update_subtitle()
@@ -352,11 +369,13 @@ class LazyUvApp(App[None]):
             else:
                 self.tools = parse_tool_list(out)
             dir_code, dir_out = await commands.run_capture(commands.build_cache_dir())
-            self.cache_dir = dir_out.strip() if dir_code == 0 and dir_out.strip() else None
+            self.cache_dir = (
+                dir_out.strip() if dir_code == 0 and dir_out.strip() else None
+            )
             ver_code, ver_out = await commands.run_capture(commands.build_uv_version())
             if ver_code == 0:
                 self.uv_version = parse_uv_version(ver_out)
-        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+        except Exception as exc:  # ruff:ignore[blind-except] - a query failure must not crash the app
             output.line(f"error: {exc}")
             self.tools = []
             self.cache_dir = None
@@ -381,7 +400,7 @@ class LazyUvApp(App[None]):
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         # A modal's ListView (workspace-list, python-list) must not repaint Details
         # from the hidden Scripts panel; only the two real panels are handled here.
-        if event.list_view.id not in ("tools", "scripts"):
+        if event.list_view.id not in {"tools", "scripts"}:
             return
         # Both ScriptsPanel and ToolsPanel are ListViews; route by widget id.
         if event.list_view.id == "tools":
@@ -415,7 +434,7 @@ class LazyUvApp(App[None]):
                 cwd=self.root if self.global_mode else self.active_dir,
             )
             output.finish(exit_code)
-        except Exception as exc:  # noqa: BLE001 - surface any launch/stream failure
+        except Exception as exc:  # ruff:ignore[blind-except] - surface any launch/stream failure
             output.line(f"error: {exc}")
             output.finish(1)
         finally:
@@ -466,6 +485,7 @@ class LazyUvApp(App[None]):
 
     def action_add(self) -> None:
         if self.mode == "script":
+
             def on_close_script(packages: list[str] | None) -> None:
                 if packages:
                     self._run_uv(
@@ -544,7 +564,7 @@ class LazyUvApp(App[None]):
             exit_code, out = await commands.run_capture(
                 commands.build_python_list(), cwd=self.root
             )
-        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+        except Exception as exc:  # ruff:ignore[blind-except] - a query failure must not crash the app
             output.line(f"error: {exc}")
             output.finish(1)
             self._busy = False
@@ -590,7 +610,7 @@ class LazyUvApp(App[None]):
 
         def recreate(confirmed: bool) -> None:
             if confirmed:
-                # `--clear` when a venv exists: uv refuses to recreate over it otherwise.
+                # `--clear` when a venv exists: uv refuses to recreate over it.
                 self._run_uv(commands.build_venv(pin, clear=exists))
 
         if exists:
@@ -609,7 +629,9 @@ class LazyUvApp(App[None]):
             if text is None:
                 return
             self._filter_text = text
-            self.query_one(DependenciesPanel).set_filter(text, self.project.dependencies)
+            self.query_one(DependenciesPanel).set_filter(
+                text, self.project.dependencies
+            )
 
         self.push_screen(FilterScreen(self._filter_text), on_close)
 
@@ -688,7 +710,7 @@ class LazyUvApp(App[None]):
                 cwd=self.active_dir,
                 timeout=_TREE_QUERY_TIMEOUT,
             )
-        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+        except Exception as exc:  # ruff:ignore[blind-except] - a query failure must not crash the app
             output.line(f"error: {exc}")
             self._busy = False
             return
@@ -726,7 +748,7 @@ class LazyUvApp(App[None]):
                 cwd=self.active_dir,
                 timeout=_TREE_QUERY_TIMEOUT,
             )
-        except Exception as exc:  # noqa: BLE001 - a query failure must not crash the app
+        except Exception as exc:  # ruff:ignore[blind-except] - a query failure must not crash the app
             output.line(f"error: {exc}")
             self._busy = False
             self._clear_outdated()  # restore the plain title
@@ -739,7 +761,9 @@ class LazyUvApp(App[None]):
         mapping = parse_outdated(out)
         if mapping is None:
             # exit 0 but unreadable output — don't report a reassuring "0 outdated".
-            output.line("could not read `uv tree --outdated` output (unrecognized format)")
+            output.line(
+                "could not read `uv tree --outdated` output (unrecognized format)"
+            )
             self._clear_outdated()
             return
         self._outdated_on = True
@@ -980,6 +1004,5 @@ class LazyUvApp(App[None]):
 
 def main() -> None:
     if not commands.uv_available():
-        print("lazyuv: `uv` was not found on your PATH. Install uv first.", file=sys.stderr)
         raise SystemExit(1)
     LazyUvApp().run()

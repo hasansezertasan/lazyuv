@@ -7,9 +7,13 @@ that executes the real `uv` binary, which makes it a clean seam to mock in tests
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
-from collections.abc import Callable, Sequence
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
 
 
 def _group_flags(group: str, kind: str) -> list[str]:
@@ -28,7 +32,9 @@ def _group_flags(group: str, kind: str) -> list[str]:
     return ["--optional", group]
 
 
-def build_add(packages: list[str], group: str = "main", kind: str = "main") -> list[str]:
+def build_add(
+    packages: list[str], group: str = "main", kind: str = "main"
+) -> list[str]:
     return ["uv", "add", *_group_flags(group, kind), *packages]
 
 
@@ -157,7 +163,8 @@ def build_init(kind: str = "app", name: str = "") -> list[str]:
 
 def build_version_bump(bump: str) -> list[str]:
     """`uv version --bump <kind>` (kind ∈ major/minor/patch/…). cwd-scoped in a
-    workspace (verified on uv 0.11.31), so the focused member is targeted by cwd."""
+    workspace (verified on uv 0.11.31), so the focused member is targeted by cwd.
+    """
     return ["uv", "version", "--bump", bump]
 
 
@@ -191,7 +198,8 @@ def build_python_uninstall(request: str) -> list[str]:
 
 def build_venv(python: str | None = None, clear: bool = False) -> list[str]:
     """Build `uv venv`. `clear` adds `--clear` to replace an existing venv (uv
-    refuses to recreate over an existing `.venv` without it)."""
+    refuses to recreate over an existing `.venv` without it).
+    """
     argv = ["uv", "venv"]
     if clear:
         argv.append("--clear")
@@ -272,10 +280,8 @@ async def run_streaming(
         return await process.wait()
     finally:
         if process.returncode is None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.terminate()
-            except ProcessLookupError:
-                pass
             await process.wait()
 
 
@@ -305,13 +311,10 @@ async def run_capture(
         stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout)
         return process.returncode or 0, stdout.decode(errors="replace")
     except TimeoutError as exc:
-        raise TimeoutError(
-            f"`{' '.join(argv)}` timed out after {timeout:g}s"
-        ) from exc
+        msg = f"`{' '.join(argv)}` timed out after {timeout:g}s"
+        raise TimeoutError(msg) from exc
     finally:
         if process.returncode is None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 process.terminate()
-            except ProcessLookupError:
-                pass
             await process.wait()
